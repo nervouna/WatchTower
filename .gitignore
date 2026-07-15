@@ -1,6 +1,7 @@
 .env*
 !.env.example
 .dev.vars*
+.codex/
 .wrangler/
 node_modules/
 dist/
