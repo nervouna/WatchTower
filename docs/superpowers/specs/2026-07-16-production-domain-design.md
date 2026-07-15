@@ -42,7 +42,7 @@ No source code, D1 schema, bindings, schedules, secrets, or application behavior
 - Public DNS resolves `watchtower.damao.io` through Cloudflare.
 - `https://watchtower.damao.io/` returns the WatchTower application over a valid TLS connection.
 - A representative `https://watchtower.damao.io/api/*` request reaches the existing Worker API.
-- The scoped Git diff contains only the design document and the intended Wrangler routing changes.
+- The scoped Git diff contains only the design document, implementation plan, and intended Wrangler routing changes; it contains no application code, data, bindings, secrets, or unrelated changes.
 
 ## Rollback
 
