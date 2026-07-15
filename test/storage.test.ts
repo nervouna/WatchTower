@@ -1,0 +1,131 @@
+import { env } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import {
+  beginRun,
+  deleteExpiredStaging,
+  getBrief,
+  listBriefs,
+  replaceBrief,
+  upsertCandidates,
+  type BriefDraft,
+} from "../src/storage/repository";
+import type { StoredCandidate } from "../src/domain/types";
+
+function storedCandidate(id: string, targetDate = "2026-07-16"): StoredCandidate {
+  return {
+    id,
+    targetDate,
+    source: "github",
+    title: "Example repo",
+    platformUrl: `https://github.com/acme/${id}`,
+    canonicalKey: `github:acme/${id}`,
+    canonicalUrl: `https://github.com/acme/${id}`,
+    originalUrl: null,
+    snippet: "A useful repository",
+    extractedContent: "Focused extracted evidence",
+    score: 0.9,
+    rank: 1,
+    contentHash: `hash-${id}`,
+  };
+}
+
+function briefDraft(date: string, title = "首个热点项目"): BriefDraft {
+  return {
+    date,
+    status: "complete",
+    publishAt: `${date}T00:00:00.000Z`,
+    generatedAt: `${date}T00:01:00.000Z`,
+    headline: "今日值得关注的开发者热点",
+    intro: "今天的热点涵盖开发工具、人工智能与新产品发布，以下内容均来自可验证的当前候选资料并经过聚合整理。",
+    missingSources: [],
+    model: "deepseek-v4-flash",
+    promptVersion: "v1",
+    items: [
+      {
+        entity: {
+          canonicalKey: "github:acme/repo",
+          canonicalTitle: "Acme Repo",
+          canonicalUrl: "https://github.com/acme/repo",
+          aliases: ["Acme"],
+        },
+        title,
+        summary: "这是一个面向开发者的新项目，提供清晰的核心能力与可验证的发布事实，当前资料表明它正在持续获得社区关注。",
+        whyItMatters: "它降低了常见工作流的门槛，并带来可以立即尝试的实际价值。",
+        tags: ["开发工具", "开源"],
+        continuity: { kind: "new" },
+        sources: [
+          { candidateId: null, source: "github", kind: "platform", label: "GitHub", url: "https://github.com/acme/repo" },
+        ],
+      },
+    ],
+  };
+}
+
+describe("D1 repository", () => {
+  beforeEach(async () => {
+    await env.DB.exec("DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
+  });
+
+  it("creates all required tables through migrations", async () => {
+    const result = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
+    const names = result.results.map((row) => row.name);
+    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources"]));
+  });
+
+  it("skips a successfully completed idempotent stage", async () => {
+    const first = await beginRun(env.DB, "2026-07-16", "collect", "2026-07-15T21:00:00.000Z");
+    await env.DB.prepare("UPDATE ingestion_runs SET status = 'succeeded', finished_at = ? WHERE id = ?")
+      .bind("2026-07-15T21:01:00.000Z", first.id)
+      .run();
+    const duplicate = await beginRun(env.DB, "2026-07-16", "collect", "2026-07-15T21:02:00.000Z");
+    expect(duplicate).toMatchObject({ id: first.id, skipped: true });
+  });
+
+  it("upserts candidates without duplicates", async () => {
+    const candidate = storedCandidate("repo");
+    await upsertCandidates(env.DB, [candidate], "2026-07-15T21:00:00.000Z");
+    await upsertCandidates(env.DB, [{ ...candidate, snippet: "Updated" }], "2026-07-15T22:30:00.000Z");
+    const row = await env.DB.prepare("SELECT COUNT(*) AS count, snippet FROM candidates").first<{ count: number; snippet: string }>();
+    expect(row).toEqual({ count: 1, snippet: "Updated" });
+  });
+
+  it("atomically replaces a brief and exposes the full payload", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    await replaceBrief(env.DB, briefDraft("2026-07-16", "更新后的热点项目"));
+    const payload = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
+    expect(payload?.items).toHaveLength(1);
+    expect(payload?.items[0]?.title).toBe("更新后的热点项目");
+    expect(payload?.sourceCounts.github).toBe(1);
+  });
+
+  it("rolls back an invalid replacement and preserves the old brief", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const invalid = briefDraft("2026-07-16", "不应写入");
+    invalid.items[0]!.sources[0]!.source = "invalid" as "github";
+    await expect(replaceBrief(env.DB, invalid)).rejects.toThrow();
+    const payload = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
+    expect(payload?.items[0]?.title).toBe("首个热点项目");
+  });
+
+  it("lists published briefs with stable cursor pagination", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-15"));
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const first = await listBriefs(env.DB, { limit: 1, now: "2026-07-16T01:00:00.000Z" });
+    expect(first.briefs.map((brief) => brief.date)).toEqual(["2026-07-16"]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await listBriefs(env.DB, { limit: 1, cursor: first.nextCursor, now: "2026-07-16T01:00:00.000Z" });
+    expect(second.briefs.map((brief) => brief.date)).toEqual(["2026-07-15"]);
+  });
+
+  it("deletes only expired staging data", async () => {
+    await upsertCandidates(env.DB, [storedCandidate("old", "2026-06-01"), storedCandidate("new")], "2026-07-15T21:00:00.000Z");
+    await beginRun(env.DB, "2026-06-01", "collect", "2026-06-01T21:00:00.000Z");
+    await replaceBrief(env.DB, briefDraft("2026-06-01"));
+    await deleteExpiredStaging(env.DB, "2026-06-16");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM candidates").first("count")).toBe(1);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM ingestion_runs").first("count")).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(1);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM entities").first("count")).toBe(1);
+  });
+});

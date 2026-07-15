@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "watchtower-daily-brief",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "watchtower-daily-brief-db",
+      "database_id": "74613d5c-db42-40e4-9810-e73bbd716bd3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "secrets": {
+    "required": ["TAVILY_API_KEY", "DEEPSEEK_API_KEY"]
+  },
+  "triggers": {
+    "crons": ["0 21 * * *", "30 22 * * *", "30 23 * * *", "30 0 * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}

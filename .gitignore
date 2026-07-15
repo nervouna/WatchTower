@@ -1,0 +1,10 @@
+.env*
+!.env.example
+.dev.vars*
+.wrangler/
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+worker-startup.cpuprofile
+.DS_Store

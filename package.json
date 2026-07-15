@@ -1,0 +1,28 @@
+{
+  "name": "watchtower-daily-brief",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler dev --test-scheduled",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log vitest run",
+    "test:watch": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log vitest",
+    "build": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --dry-run --outdir dist",
+    "cf-typegen": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler types",
+    "db:migrate:local": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --remote",
+    "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --secrets-file .env"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "latest",
+    "@types/node": "latest",
+    "@eslint/js": "latest",
+    "eslint": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vitest": "^4.1.0",
+    "wrangler": "latest"
+  }
+}
