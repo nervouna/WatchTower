@@ -48,19 +48,21 @@ function renderError(title, message) {
 function renderBrief(brief, isLatest) {
   document.title = `${brief.date} · WatchTower 热点简报`;
   const fragment = document.createDocumentFragment();
+  const notices = [];
   if (isLatest && brief.date < utcToday()) {
     const delayed = element("div", "notice notice-delay");
     delayed.setAttribute("role", "status");
     delayed.textContent = `今日简报生成延迟，当前展示 ${brief.date}`;
-    fragment.append(delayed);
+    notices.push(delayed);
   }
   if (brief.status === "partial") {
     const partial = element("div", "notice notice-partial");
+    partial.setAttribute("role", "status");
     partial.textContent = `本期为部分简报，暂缺：${brief.missingSources.map((source) => sourceNames[source]).join("、")}`;
-    fragment.append(partial);
+    notices.push(partial);
   }
 
-  const hero = element("header", "brief-hero");
+  const hero = element("header", "brief-hero hero-card");
   hero.append(element("p", "eyebrow", `${brief.date} · UTC`), element("h1", "brief-title", brief.headline), element("p", "brief-intro", brief.intro));
   const metadata = element("div", "metadata");
   metadata.append(
@@ -76,12 +78,26 @@ function renderBrief(brief, isLatest) {
     coverage.append(item);
   }
   hero.append(coverage);
+  hero.append(...notices);
   fragment.append(hero);
 
+  const briefSection = element("section", "brief-section surface-card");
+  const sectionHeader = element("header", "section-header");
+  sectionHeader.append(element("h2", "section-title", "本期热点"), element("p", "section-meta", `${brief.items.length} 条经过筛选的技术与产品信号`));
+  briefSection.append(sectionHeader);
+  if (brief.items.length === 0) {
+    const empty = element("div", "brief-empty");
+    empty.append(element("h3", "section-title", "本期暂无可发布热点"), element("p", "state-copy", "当前信号还不足以形成可靠简报，你可以回看已经发布的内容。"));
+    empty.append(link("/archive", "查看历史简报", "button-link"));
+    briefSection.append(empty);
+    fragment.append(briefSection);
+    app.replaceChildren(fragment);
+    return;
+  }
   const list = element("ol", "brief-list");
   for (const item of brief.items) {
     const row = element("li", "brief-item");
-    const article = element("article", "brief-card");
+    const article = element("article", "brief-entry");
     const heading = element("h2", "item-title");
     heading.append(element("span", "rank", String(item.rank).padStart(2, "0")), document.createTextNode(item.title));
     article.append(heading, element("p", "summary", item.summary));
@@ -104,7 +120,8 @@ function renderBrief(brief, isLatest) {
     row.append(article);
     list.append(row);
   }
-  fragment.append(list);
+  briefSection.append(list);
+  fragment.append(briefSection);
   app.replaceChildren(fragment);
 }
 
@@ -120,9 +137,16 @@ async function renderArchive() {
     cursor = page.nextCursor;
   } while (cursor);
   const section = element("section", "archive");
-  section.append(element("p", "eyebrow", "ARCHIVE"), element("h1", "brief-title", "历史归档"));
+  const hero = element("header", "archive-hero hero-card");
+  hero.append(element("p", "eyebrow", "ARCHIVE"), element("h1", "brief-title", "历史归档"), element("p", "brief-intro", "按日期回看每一期技术与产品热点简报。"));
+  if (summaries.length > 0) hero.append(element("p", "archive-total", `已归档 ${summaries.length} 期`));
+  section.append(hero);
+  const archiveCard = element("div", "archive-card surface-card");
   if (summaries.length === 0) {
-    section.append(element("p", "state-copy", "归档仍为空，第一期简报发布后会出现在这里。"));
+    const empty = element("div", "archive-empty");
+    empty.append(element("h2", "section-title", "第一期简报正在路上"), element("p", "state-copy", "发布后会自动出现在这里，你可以先查看最新简报。"));
+    empty.append(link("/", "查看最新简报", "button-link"));
+    archiveCard.append(empty);
   } else {
     const groups = Map.groupBy(summaries, (brief) => brief.date.slice(0, 7));
     for (const [month, briefs] of groups) {
@@ -137,14 +161,29 @@ async function renderArchive() {
         list.append(row);
       }
       group.append(list);
-      section.append(group);
+      archiveCard.append(group);
     }
   }
+  section.append(archiveCard);
   app.replaceChildren(section);
+}
+
+function markCurrentNavigation() {
+  const isArchive = location.pathname === "/archive" || location.pathname === "/archive/";
+  const latest = document.querySelector('[data-nav="latest"]');
+  const archive = document.querySelector('[data-nav="archive"]');
+  if (isArchive) {
+    latest?.removeAttribute("aria-current");
+    archive?.setAttribute("aria-current", "page");
+  } else {
+    latest?.setAttribute("aria-current", "page");
+    archive?.removeAttribute("aria-current");
+  }
 }
 
 async function main() {
   try {
+    markCurrentNavigation();
     if (location.pathname === "/archive" || location.pathname === "/archive/") return await renderArchive();
     const match = /^\/briefs\/(\d{4}-\d{2}-\d{2})\/?$/.exec(location.pathname);
     if (match) return renderBrief(await api(`/api/briefs/${match[1]}`), false);
@@ -153,6 +192,8 @@ async function main() {
   } catch (error) {
     if (error.status === 404) renderError("简报尚未发布", error.message);
     else renderError("暂时无法加载", "请稍后刷新页面重试。");
+  } finally {
+    app.setAttribute("aria-busy", "false");
   }
 }
 

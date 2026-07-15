@@ -17,18 +17,29 @@
           <span>WatchTower</span>
         </a>
         <div class="nav-links">
-          <a href="/">最新简报</a>
-          <a href="/archive">历史归档</a>
+          <a data-nav="latest" href="/">最新简报</a>
+          <a data-nav="archive" href="/archive">历史归档</a>
         </div>
       </nav>
     </header>
     <main id="main" class="shell" tabindex="-1">
-      <div id="app" aria-live="polite">
-        <section class="state-card"><p>正在加载简报……</p></section>
+      <div id="app" aria-live="polite" aria-busy="true">
+        <section class="state-card state-loading" aria-labelledby="loading-title">
+          <p class="eyebrow">WATCHTOWER</p>
+          <h1 id="loading-title" class="state-title">正在整理今日信号</h1>
+          <p class="state-copy">简报马上就绪。</p>
+          <div class="skeleton-lines" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </section>
       </div>
     </main>
     <footer class="footer">
-      <p>每日 00:00 UTC 发布。内容由公开来源聚合整理，不代表平台官方排名。</p>
+      <div class="footer-inner">
+        <p>每日 00:00 UTC 发布。内容由公开来源聚合整理，不代表平台官方排名。</p>
+      </div>
     </footer>
   </body>
 </html>
