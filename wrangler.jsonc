@@ -3,7 +3,13 @@
   "name": "watchtower-daily-brief",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-15",
-  "workers_dev": true,
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "watchtower.damao.io",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
