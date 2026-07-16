@@ -3,6 +3,8 @@ export const SOURCE_KINDS = ["hacker-news", "product-hunt", "github", "kickstart
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 export type BriefStatus = "complete" | "partial";
 export type PipelineStage = "collect" | "draft" | "final" | "recovery";
+export const FEEDBACK_VALUES = ["follow", "irrelevant", "uninteresting"] as const;
+export type FeedbackValue = (typeof FEEDBACK_VALUES)[number];
 
 export interface SearchCandidate {
   source: SourceKind;
@@ -85,4 +87,12 @@ export interface BriefSummary {
 export interface BriefListPayload {
   briefs: BriefSummary[];
   nextCursor: string | null;
+}
+
+export interface EntityFeedback {
+  entityId: string;
+  value: FeedbackValue;
+  sourceBriefDate: string;
+  createdAt: string;
+  updatedAt: string;
 }

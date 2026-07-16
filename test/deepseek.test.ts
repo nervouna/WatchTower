@@ -77,4 +77,36 @@ describe("generateBrief", () => {
     await expect(generateBrief("secret", [candidate], [], { fetcher })).rejects.toThrow("DEEPSEEK_VALIDATION_FAILED");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("passes feedback policy to the model and repairs an excluded entity", async () => {
+    const excludedEntity = {
+      id: "entity_00000000000000000000000000000000",
+      canonicalKey: candidate.canonicalKey,
+      canonicalTitle: "Acme Repo",
+      canonicalUrl: candidate.canonicalUrl,
+      aliases: [],
+      lastSeenDate: "2026-07-15",
+      previousSummary: "Previous summary",
+      feedback: "irrelevant" as const,
+    };
+    const invalid = {
+      ...valid,
+      items: [{
+        ...valid.items[0],
+        existing_entity_id: excludedEntity.id,
+        update_kind: "continuing",
+        material_change_zh: "发布了新的主要版本并新增核心能力。",
+      }],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(invalid) } }] }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
+
+    await generateBrief("secret", [candidate], [excludedEntity], { fetcher });
+    const firstBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as { messages: Array<{ content: string }> };
+    expect(firstBody.messages[1]?.content).toContain('"feedback":"irrelevant"');
+    expect(firstBody.messages[1]?.content).toContain("Never include this entity");
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("FEEDBACK_EXCLUDED_ENTITY");
+  });
 });

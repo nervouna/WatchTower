@@ -15,6 +15,7 @@ import {
   getBriefState,
   getCandidates,
   getEntityCatalog,
+  getFeedbackPreferences,
   replaceBrief,
   updateBriefStatus,
   upsertCandidates,
@@ -111,7 +112,8 @@ async function refreshCandidates(
   const failed = settled.filter((entry) => entry.result === null).map((entry) => entry.source);
   const discovered = settled.flatMap((entry) => entry.result?.candidates ?? []);
   let credits = settled.reduce((total, entry) => total + (entry.result?.credits ?? 0), 0);
-  const selected = selectCandidates(discovered, 30);
+  const preferences = await getFeedbackPreferences(env.DB);
+  const selected = selectCandidates(discovered, 30, preferences);
   const existing = await getCandidates(env.DB, invocation.targetDate);
   const existingByKey = new Map(existing.map((candidate) => [`${candidate.source}\u0000${candidate.canonicalKey}`, candidate]));
   const fingerprints = new Map<string, string>();
@@ -233,7 +235,7 @@ function buildBriefDraft(
     intro: generated.intro_zh,
     missingSources,
     model: "deepseek-v4-flash",
-    promptVersion: "v1",
+    promptVersion: "v2-feedback",
     items,
   };
 }

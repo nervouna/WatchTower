@@ -1,4 +1,15 @@
-import type { SearchCandidate, SourceKind } from "../domain/types";
+import type { FeedbackValue, SearchCandidate, SourceKind } from "../domain/types";
+
+const FEEDBACK_PRIORITY: Record<FeedbackValue, number> = {
+  follow: 0,
+  uninteresting: 2,
+  irrelevant: 3,
+};
+
+function preferencePriority(candidate: SearchCandidate, preferences: ReadonlyMap<string, FeedbackValue>): number {
+  const preference = preferences.get(candidate.canonicalKey);
+  return preference ? FEEDBACK_PRIORITY[preference] : 1;
+}
 
 function compareCandidates(a: SearchCandidate, b: SearchCandidate, sourceSizes: ReadonlyMap<SourceKind, number>): number {
   const aSize = sourceSizes.get(a.source) ?? 1;
@@ -10,11 +21,20 @@ function compareCandidates(a: SearchCandidate, b: SearchCandidate, sourceSizes: 
   return bValue - aValue || a.rank - b.rank || a.canonicalKey.localeCompare(b.canonicalKey);
 }
 
-export function selectCandidates(input: readonly SearchCandidate[], limit = 30): SearchCandidate[] {
+export function selectCandidates(
+  input: readonly SearchCandidate[],
+  limit = 30,
+  preferences: ReadonlyMap<string, FeedbackValue> = new Map(),
+): SearchCandidate[] {
   const seen = new Set<string>();
   const unique = input
     .slice()
-    .sort((a, b) => a.rank - b.rank)
+    .filter((candidate) => preferences.get(candidate.canonicalKey) !== "irrelevant")
+    .sort((a, b) => {
+      const aPriority = preferencePriority(a, preferences);
+      const bPriority = preferencePriority(b, preferences);
+      return aPriority - bPriority || a.rank - b.rank;
+    })
     .filter((candidate) => {
       const key = `${candidate.source}\u0000${candidate.canonicalKey}`;
       if (seen.has(key)) return false;

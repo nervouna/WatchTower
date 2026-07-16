@@ -8,6 +8,7 @@ interface ValidationContext {
   candidates: ReadonlyMap<string, CandidateCatalogEntry>;
   entities: ReadonlySet<string>;
   enforceSourceQuota: boolean;
+  excludedEntityIds?: ReadonlySet<string>;
 }
 
 export type GeneratedBriefValidation =
@@ -98,6 +99,9 @@ export function validateGeneratedBrief(value: unknown, context: ValidationContex
       errors.add("INVALID_CONTINUITY");
     }
     if (rawItem.existing_entity_id !== null && !context.entities.has(rawItem.existing_entity_id)) errors.add("UNKNOWN_ENTITY");
+    if (rawItem.existing_entity_id !== null && context.excludedEntityIds?.has(rawItem.existing_entity_id)) {
+      errors.add("FEEDBACK_EXCLUDED_ENTITY");
+    }
 
     const itemSources = new Set<SourceKind>();
     for (const candidateId of rawItem.candidate_ids) {

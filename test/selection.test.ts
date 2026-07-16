@@ -40,4 +40,29 @@ describe("selectCandidates", () => {
     const input = [candidate("github", 1, "github:a/b"), candidate("github", 2, "github:a/b")];
     expect(selectCandidates(input, 30)).toEqual([input[0]]);
   });
+
+  it("applies follow, irrelevant, and uninteresting preferences before source quotas", () => {
+    const input = [
+      candidate("github", 1, "github:neutral"),
+      candidate("github", 2, "github:boring"),
+      candidate("github", 3, "github:blocked"),
+      candidate("github", 4, "github:followed"),
+    ];
+    const preferences = new Map([
+      ["github:boring", "uninteresting" as const],
+      ["github:blocked", "irrelevant" as const],
+      ["github:followed", "follow" as const],
+    ]);
+
+    expect(selectCandidates(input, 30, preferences).map((entry) => entry.canonicalKey)).toEqual([
+      "github:followed",
+      "github:neutral",
+      "github:boring",
+    ]);
+  });
+
+  it("preserves the existing order when there are no preferences", () => {
+    const input = sources.flatMap((source) => Array.from({ length: 10 }, (_, index) => candidate(source, index + 1)));
+    expect(selectCandidates(input, 30, new Map())).toEqual(selectCandidates(input, 30));
+  });
 });

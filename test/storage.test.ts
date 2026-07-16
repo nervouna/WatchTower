@@ -6,7 +6,10 @@ import {
   deleteExpiredStaging,
   getBrief,
   listBriefs,
+  getEntityFeedback,
+  removeEntityFeedback,
   replaceBrief,
+  setEntityFeedback,
   upsertCandidates,
   type BriefDraft,
 } from "../src/storage/repository";
@@ -70,7 +73,7 @@ describe("D1 repository", () => {
   it("creates all required tables through migrations", async () => {
     const result = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
     const names = result.results.map((row) => row.name);
-    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources"]));
+    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources", "entity_feedback"]));
   });
 
   it("skips a successfully completed idempotent stage", async () => {
@@ -97,6 +100,27 @@ describe("D1 repository", () => {
     expect(payload?.items).toHaveLength(1);
     expect(payload?.items[0]?.title).toBe("更新后的热点项目");
     expect(payload?.sourceCounts.github).toBe(1);
+  });
+
+  it("stores one mutable feedback value per entity and preserves it across brief replacement", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const brief = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
+    const entityId = brief!.items[0]!.entityId;
+
+    expect(await setEntityFeedback(env.DB, entityId, "follow", "2026-07-16", "2026-07-16T01:00:00.000Z")).toBe(true);
+    expect(await getEntityFeedback(env.DB, [entityId])).toEqual({ [entityId]: "follow" });
+    expect(await setEntityFeedback(env.DB, entityId, "uninteresting", "2026-07-16", "2026-07-16T02:00:00.000Z")).toBe(true);
+    await replaceBrief(env.DB, briefDraft("2026-07-16", "更新后的热点项目"));
+    expect(await getEntityFeedback(env.DB, [entityId])).toEqual({ [entityId]: "uninteresting" });
+
+    await removeEntityFeedback(env.DB, entityId);
+    expect(await getEntityFeedback(env.DB, [entityId])).toEqual({});
+  });
+
+  it("rejects feedback for an entity that is not present in the claimed published brief", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const brief = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
+    expect(await setEntityFeedback(env.DB, brief!.items[0]!.entityId, "follow", "2026-07-15", "2026-07-16T01:00:00.000Z")).toBe(false);
   });
 
   it("rolls back an invalid replacement and preserves the old brief", async () => {

@@ -83,4 +83,52 @@ describe("public API", () => {
     expect(response.status).toBe(405);
     expect(response.headers.get("Allow")).toBe("GET, HEAD");
   });
+
+  it("authenticates, stores, reads, replaces, and clears entity feedback without caching or CORS", async () => {
+    await replaceBrief(env.DB, draft());
+    const brief = await handleRequest(new Request("https://example.com/api/briefs/latest"), env, now);
+    const entityId = ((await brief.json()) as { items: Array<{ entityId: string }> }).items[0]!.entityId;
+    const headers = { Authorization: "Bearer test-feedback-token", "Content-Type": "application/json" };
+
+    const verify = await handleRequest(new Request("https://example.com/api/feedback", { headers }), env, now);
+    expect(verify.status).toBe(200);
+    expect(await verify.json()).toEqual({ feedback: {} });
+    expect(verify.headers.get("Cache-Control")).toBe("no-store");
+    expect(verify.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const saved = await handleRequest(new Request(`https://example.com/api/feedback/${entityId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ value: "follow", briefDate: "2026-07-16" }),
+    }), env, now);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ entityId, value: "follow" });
+
+    const read = await handleRequest(new Request(`https://example.com/api/feedback?entityId=${entityId}`, { headers }), env, now);
+    expect(await read.json()).toEqual({ feedback: { [entityId]: "follow" } });
+
+    const cleared = await handleRequest(new Request(`https://example.com/api/feedback/${entityId}`, { method: "DELETE", headers }), env, now);
+    expect(cleared.status).toBe(204);
+  });
+
+  it("rejects unauthorized and invalid feedback requests with stable errors", async () => {
+    const unauthorized = await handleRequest(new Request("https://example.com/api/feedback"), env, now);
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get("WWW-Authenticate")).toBe("Bearer");
+
+    const headers = { Authorization: "Bearer test-feedback-token", "Content-Type": "application/json" };
+    const invalid = await handleRequest(new Request("https://example.com/api/feedback/entity_bad", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ value: "liked", briefDate: "2026-02-30" }),
+    }), env, now);
+    expect(invalid.status).toBe(400);
+
+    const missing = await handleRequest(new Request("https://example.com/api/feedback/entity_00000000000000000000000000000000", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ value: "follow", briefDate: "2026-07-16" }),
+    }), env, now);
+    expect(missing.status).toBe(404);
+  });
 });

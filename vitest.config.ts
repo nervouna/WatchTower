@@ -11,6 +11,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
+          WATCHTOWER_FEEDBACK_TOKEN: "test-feedback-token",
         },
         serviceBindings: {
           ASSETS: () => new Response("asset"),

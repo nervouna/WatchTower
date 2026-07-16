@@ -43,7 +43,22 @@
     <footer class="footer">
       <div class="footer-inner">
         <p>每日 00:00 UTC 发布。内容由公开来源聚合整理，不代表平台官方排名。</p>
+        <button id="feedback-mode-button" class="feedback-mode-button" type="button">反馈模式</button>
       </div>
     </footer>
+    <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-dialog-title">
+      <form id="feedback-form" method="dialog">
+        <p class="eyebrow">EDITOR ACCESS</p>
+        <h2 id="feedback-dialog-title" class="dialog-title">进入反馈模式</h2>
+        <p class="dialog-copy">输入站主凭证后，便可标记哪些内容值得继续跟进。</p>
+        <label class="feedback-token-label" for="feedback-token">反馈凭证</label>
+        <input id="feedback-token" class="feedback-token-input" name="token" type="password" autocomplete="current-password" required>
+        <p id="feedback-auth-error" class="feedback-auth-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="dialog-button dialog-button-secondary" type="button" data-dialog-cancel>取消</button>
+          <button class="dialog-button dialog-button-primary" type="submit">解锁</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>

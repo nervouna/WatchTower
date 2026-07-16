@@ -4,6 +4,7 @@ import {
   type BriefPayload,
   type BriefStatus,
   type Continuity,
+  type FeedbackValue,
   type PipelineStage,
   type SourceKind,
   type SourceLink,
@@ -44,6 +45,8 @@ export interface BriefDraft {
   promptVersion: string;
   items: BriefDraftItem[];
 }
+
+export type FeedbackMap = Record<string, FeedbackValue>;
 
 interface BriefRow {
   brief_date: string;
@@ -231,11 +234,12 @@ export async function getEntityCatalog(db: D1Database, targetDate: string): Prom
   const result = await db
     .prepare(
       `SELECT entity.id, entity.canonical_key, entity.canonical_title, entity.canonical_url,
-              entity.aliases_json, entity.last_seen_date,
+              entity.aliases_json, entity.last_seen_date, feedback.feedback,
               (SELECT item.summary FROM brief_items AS item
                WHERE item.entity_id = entity.id AND item.brief_date < ?
                ORDER BY item.brief_date DESC LIMIT 1) AS previous_summary
        FROM entities AS entity
+       LEFT JOIN entity_feedback AS feedback ON feedback.entity_id = entity.id
        WHERE entity.canonical_key NOT LIKE 'event:%'
           OR entity.last_seen_date >= date(?, '-14 day')
        ORDER BY entity.last_seen_date DESC LIMIT 500`,
@@ -249,6 +253,7 @@ export async function getEntityCatalog(db: D1Database, targetDate: string): Prom
       aliases_json: string;
       last_seen_date: string;
       previous_summary: string | null;
+      feedback: FeedbackValue | null;
     }>();
   return result.results.map((row) => ({
     id: row.id,
@@ -258,7 +263,58 @@ export async function getEntityCatalog(db: D1Database, targetDate: string): Prom
     aliases: parseStringArray(row.aliases_json),
     lastSeenDate: row.last_seen_date,
     previousSummary: row.previous_summary,
+    feedback: row.feedback,
   }));
+}
+
+export async function getFeedbackPreferences(db: D1Database): Promise<Map<string, FeedbackValue>> {
+  const result = await db
+    .prepare(
+      `SELECT entity.canonical_key, feedback.feedback
+       FROM entity_feedback AS feedback
+       JOIN entities AS entity ON entity.id = feedback.entity_id`,
+    )
+    .all<{ canonical_key: string; feedback: FeedbackValue }>();
+  return new Map(result.results.map((row) => [row.canonical_key, row.feedback]));
+}
+
+export async function getEntityFeedback(db: D1Database, entityIds: readonly string[]): Promise<FeedbackMap> {
+  if (entityIds.length === 0) return {};
+  const placeholders = entityIds.map(() => "?").join(", ");
+  const result = await db
+    .prepare(`SELECT entity_id, feedback FROM entity_feedback WHERE entity_id IN (${placeholders})`)
+    .bind(...entityIds)
+    .all<{ entity_id: string; feedback: FeedbackValue }>();
+  return Object.fromEntries(result.results.map((row) => [row.entity_id, row.feedback]));
+}
+
+export async function setEntityFeedback(
+  db: D1Database,
+  entityId: string,
+  value: FeedbackValue,
+  sourceBriefDate: string,
+  updatedAt: string,
+): Promise<boolean> {
+  const result = await db
+    .prepare(
+      `INSERT INTO entity_feedback (entity_id, feedback, source_brief_date, created_at, updated_at)
+       SELECT item.entity_id, ?, ?, ?, ?
+       FROM brief_items AS item
+       JOIN briefs AS brief ON brief.brief_date = item.brief_date
+       WHERE item.entity_id = ? AND item.brief_date = ? AND brief.publish_at <= ?
+       LIMIT 1
+       ON CONFLICT(entity_id) DO UPDATE SET
+         feedback = excluded.feedback,
+         source_brief_date = excluded.source_brief_date,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(value, sourceBriefDate, updatedAt, updatedAt, entityId, sourceBriefDate, updatedAt)
+    .run();
+  return result.meta.changes > 0;
+}
+
+export async function removeEntityFeedback(db: D1Database, entityId: string): Promise<void> {
+  await db.prepare("DELETE FROM entity_feedback WHERE entity_id = ?").bind(entityId).run();
 }
 
 export async function getBriefState(

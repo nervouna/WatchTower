@@ -1,5 +1,5 @@
 import { validateGeneratedBrief } from "./generated-brief";
-import type { GeneratedBrief, StoredCandidate } from "./types";
+import type { FeedbackValue, GeneratedBrief, StoredCandidate } from "./types";
 import { fetchJsonWithRetry, type RetryOptions } from "../ingestion/http-client";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
@@ -12,6 +12,7 @@ export interface EntityCatalogEntry {
   aliases: string[];
   lastSeenDate: string;
   previousSummary: string | null;
+  feedback: FeedbackValue | null;
 }
 
 type DeepSeekOptions = RetryOptions;
@@ -65,6 +66,7 @@ Never output or invent URLs. Merge only the same real product, repository, campa
 }
 
 function buildCatalog(candidates: readonly StoredCandidate[], entities: readonly EntityCatalogEntry[]): string {
+  const feedbackByKey = new Map(entities.map((entity) => [entity.canonicalKey, entity.feedback]));
   return JSON.stringify({
     candidate_catalog: candidates.map((candidate) => ({
       id: candidate.id,
@@ -72,6 +74,7 @@ function buildCatalog(candidates: readonly StoredCandidate[], entities: readonly
       canonical_key: candidate.canonicalKey,
       title: candidate.title,
       evidence: candidate.extractedContent ?? candidate.snippet,
+      feedback: feedbackByKey.get(candidate.canonicalKey) ?? null,
     })),
     entity_catalog: entities.map((entity) => ({
       id: entity.id,
@@ -80,11 +83,17 @@ function buildCatalog(candidates: readonly StoredCandidate[], entities: readonly
       aliases: entity.aliases,
       last_seen_date: entity.lastSeenDate,
       previous_summary: entity.previousSummary,
+      feedback: entity.feedback,
     })),
     instructions: {
       continuing_requires_material_change: true,
       material_changes: ["new source", "new version", "major capability", "public launch", "funding", "crowdfunding milestone", "material popularity milestone"],
       suppress_unchanged_repeats: true,
+      feedback_policy: {
+        follow: "Prioritize only when there is a material change.",
+        irrelevant: "Never include this entity.",
+        uninteresting: "Deprioritize unless there is a major material change.",
+      },
       language: "Chinese",
     },
   });
@@ -125,11 +134,13 @@ export async function generateBrief(
   const user = buildCatalog(candidates, entities);
   const catalog = new Map(candidates.map((candidate) => [candidate.id, { source: candidate.source }]));
   const entityIds = new Set(entities.map((entity) => entity.id));
+  const excludedEntityIds = new Set(entities.filter((entity) => entity.feedback === "irrelevant").map((entity) => entity.id));
   const first = await complete(apiKey, [{ role: "system", content: system }, { role: "user", content: user }], options);
   const firstValidation = validateGeneratedBrief(parseJson(first.content), {
     candidates: catalog,
     entities: entityIds,
     enforceSourceQuota: true,
+    excludedEntityIds,
   });
   if (firstValidation.ok) return { brief: firstValidation.value, repaired: false, totalTokens: first.totalTokens };
 
@@ -157,6 +168,7 @@ export async function generateBrief(
     candidates: catalog,
     entities: entityIds,
     enforceSourceQuota: true,
+    excludedEntityIds,
   });
   if (!repairValidation.ok) throw new Error(`DEEPSEEK_VALIDATION_FAILED:${repairValidation.errors.join(",")}`);
   return { brief: repairValidation.value, repaired: true, totalTokens: first.totalTokens + repair.totalTokens };

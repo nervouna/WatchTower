@@ -356,7 +356,8 @@ button:focus-visible,
 .why,
 .continuity,
 .tags,
-.sources {
+.sources,
+.feedback-controls {
   margin-left: 56px;
 }
 
@@ -443,6 +444,73 @@ button:focus-visible,
 
 .source:hover {
   background: var(--accent-soft);
+}
+
+.feedback-controls {
+  display: grid;
+  max-width: 65ch;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.feedback-label {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.feedback-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feedback-option,
+.feedback-mode-button,
+.dialog-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color var(--transition-snap), background-color var(--transition-snap), transform var(--transition-snap);
+}
+
+.feedback-option {
+  padding: 8px 14px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.feedback-option:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.feedback-option[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.feedback-option:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.feedback-status {
+  min-height: 22px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.feedback-status.is-saved {
+  color: var(--accent);
+}
+
+.feedback-status.is-error,
+.feedback-auth-error {
+  color: var(--error);
 }
 
 .state-card {
@@ -591,6 +659,97 @@ button:focus-visible,
   text-align: center;
 }
 
+.feedback-mode-button {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.feedback-mode-button:hover,
+.feedback-mode-button[aria-pressed="true"] {
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+
+.feedback-dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 32px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+}
+
+.feedback-dialog::backdrop {
+  background: rgb(15 23 26 / 58%);
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.dialog-copy {
+  margin: 12px 0 24px;
+  color: var(--text-secondary);
+}
+
+.feedback-token-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.feedback-token-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.feedback-auth-error {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.dialog-button {
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.dialog-button-secondary {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.dialog-button-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.dialog-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .footer p {
   margin: 0;
 }
@@ -663,6 +822,14 @@ button:focus-visible,
   .tags,
   .sources {
     margin-left: 40px;
+  }
+
+  .feedback-controls {
+    margin-left: 40px;
+  }
+
+  .feedback-option {
+    min-height: 44px;
   }
 
   .why {

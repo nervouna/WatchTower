@@ -13,6 +13,7 @@
     "cf-typegen": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler types",
     "db:migrate:local": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --remote",
+    "feedback:setup": "node scripts/setup-feedback-token.mjs",
     "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --secrets-file .env"
   },
   "devDependencies": {
