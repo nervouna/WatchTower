@@ -10,8 +10,18 @@ touching UI code. Change a locked value only after explicit user approval.
 - Product: WatchTower
 - App domain: daily Chinese technology and product intelligence brief
 - Surface: responsive, content-heavy editorial web application
+- Mobile surface: Flutter reading application for iPhone, iPad, and Android; it shares this lock instead of introducing a second visual identity
 - Primary tasks: scan the latest brief, understand why each signal matters, and browse the archive
 - Focal point: the current brief headline; every screen must have exactly one dominant focal point
+
+## Mobile application
+
+- Navigation: two root destinations, `今日` and `归档`; detail, settings, and privacy are spoke screens with standard back navigation
+- App shell: native safe areas, a compact WatchTower header, system bottom navigation, and a mini audio player only while audio is active
+- Offline: show cached text immediately and identify it with last-refresh context; audio remains online-only
+- Notifications: explain value in-product before requesting the iOS system permission; Android does not expose notification controls until its provider is implemented
+- Accessibility: honor Dynamic Type, VoiceOver/TalkBack order, keyboard navigation, and minimum 44pt iOS / 48dp Android touch targets
+- Responsive behavior: preserve the editorial hierarchy on tablets and wide Android windows; do not merely stretch phone cards edge to edge
 
 ## Visual direction
 

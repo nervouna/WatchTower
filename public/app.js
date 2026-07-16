@@ -335,13 +335,42 @@ async function renderArchive() {
   app.replaceChildren(section);
 }
 
+function renderPrivacy() {
+  document.title = "隐私说明 · WatchTower";
+  const section = element("section", "archive");
+  const hero = element("header", "archive-hero hero-card");
+  hero.append(
+    element("p", "eyebrow", "PRIVACY"),
+    element("h1", "brief-title", "隐私说明"),
+    element("p", "brief-intro", "WatchTower 无需账号即可阅读，不包含广告或跨应用追踪。"),
+  );
+  section.append(hero);
+  const card = element("article", "archive-card surface-card");
+  const blocks = [
+    ["本地阅读数据", "你阅读过哪些简报、音频播放位置和离线缓存只保存在当前设备，不会上传到 WatchTower。"],
+    ["发布通知", "只有在你主动开启移动 App 的每日提醒后，App 才会把 APNs 设备令牌加密发送给 WatchTower。令牌只用于发送新简报通知；关闭提醒后，服务端会删除对应订阅。"],
+    ["公开来源", "简报中的外部链接会在目标网站打开，并适用目标网站各自的隐私政策。"],
+  ];
+  for (const [title, copy] of blocks) {
+    const block = element("section", "archive-month");
+    block.append(element("h2", "section-title", title), element("p", "state-copy", copy));
+    card.append(block);
+  }
+  section.append(card);
+  app.replaceChildren(section);
+}
+
 function markCurrentNavigation() {
   const isArchive = location.pathname === "/archive" || location.pathname === "/archive/";
+  const isPrivacy = location.pathname === "/privacy" || location.pathname === "/privacy/";
   const latest = document.querySelector('[data-nav="latest"]');
   const archive = document.querySelector('[data-nav="archive"]');
   if (isArchive) {
     latest?.removeAttribute("aria-current");
     archive?.setAttribute("aria-current", "page");
+  } else if (isPrivacy) {
+    latest?.removeAttribute("aria-current");
+    archive?.removeAttribute("aria-current");
   } else {
     latest?.setAttribute("aria-current", "page");
     archive?.removeAttribute("aria-current");
@@ -388,6 +417,7 @@ feedbackForm.addEventListener("submit", async (event) => {
 async function main() {
   try {
     markCurrentNavigation();
+    if (location.pathname === "/privacy" || location.pathname === "/privacy/") return renderPrivacy();
     if (location.pathname === "/archive" || location.pathname === "/archive/") return await renderArchive();
     const match = /^\/briefs\/(\d{4}-\d{2}-\d{2})\/?$/.exec(location.pathname);
     if (match) return await renderBrief(await api(`/api/briefs/${match[1]}`), false);

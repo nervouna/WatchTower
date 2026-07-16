@@ -78,7 +78,10 @@ describe("D1 repository", () => {
   it("creates all required tables through migrations", async () => {
     const result = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
     const names = result.results.map((row) => row.name);
-    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources", "entity_feedback", "brief_audio"]));
+    expect(names).toEqual(expect.arrayContaining([
+      "ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources",
+      "entity_feedback", "brief_audio", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
+    ]));
   });
 
   it("hydrates audio states and claims one content hash idempotently", async () => {

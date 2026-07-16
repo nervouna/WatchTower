@@ -38,6 +38,7 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 - Tavily Search 与 Extract API
 - DeepSeek Chat Completions API
 - 原生 HTML、CSS 和 JavaScript 前端
+- Flutter iOS/Android 阅读客户端（`mobile/`）
 - Vitest 与 Cloudflare Workers 测试池
 - mise 管理 Node.js，npm 管理依赖和脚本
 
@@ -105,6 +106,27 @@ npm run dev
 | `npm run db:migrate:remote` | 将 D1 migrations 应用到远程数据库。 |
 | `npm run feedback:setup` | 在本地 `.env` 中生成或替换反馈凭证。 |
 | `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
+
+## 移动客户端
+
+`mobile/` 是复用公开简报 API 的 Flutter 客户端。iOS 首版包含 APNs 发布通知；Android 共享阅读、离线文字缓存和后台音频，但暂不接入 FCM。
+
+```sh
+cd mobile
+flutter pub get
+flutter analyze
+flutter test
+flutter build ios --release --no-codesign
+flutter build appbundle
+```
+
+默认 API 地址是 `https://watchtower.damao.io`。本地联调时使用非秘密编译参数覆盖：
+
+```sh
+flutter run --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
+```
+
+iOS Bundle ID 与 Android applicationId 均为 `io.damao.watchtower`。推送需要 Apple Developer App ID、Push Notifications capability、真实设备，以及以下 Worker secrets：`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY`、`PUSH_TOKEN_ENCRYPTION_KEY`、`PUSH_TOKEN_HMAC_KEY`。私钥和加密密钥不得写入仓库或日志。
 
 ## HTTP API
 

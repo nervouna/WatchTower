@@ -35,6 +35,10 @@
       {
         "binding": "BRIEF_AUDIO_QUEUE",
         "queue": "watchtower-brief-audio-jobs"
+      },
+      {
+        "binding": "BRIEF_PUSH_QUEUE",
+        "queue": "watchtower-brief-push-jobs"
       }
     ],
     "consumers": [
@@ -45,14 +49,38 @@
         "max_retries": 2,
         "max_concurrency": 1,
         "retry_delay": 60
+      },
+      {
+        "queue": "watchtower-brief-push-jobs",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "retry_delay": 60
       }
     ]
   },
+  "ratelimits": [
+    {
+      "name": "MOBILE_PUSH_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
   "vars": {
     "BRIEF_AUDIO_ENABLED": "true"
   },
   "secrets": {
-    "required": ["TAVILY_API_KEY", "DEEPSEEK_API_KEY", "WATCHTOWER_FEEDBACK_TOKEN", "MIMO_API_KEY"]
+    "required": [
+      "TAVILY_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "WATCHTOWER_FEEDBACK_TOKEN",
+      "MIMO_API_KEY",
+      "APNS_TEAM_ID",
+      "APNS_KEY_ID",
+      "APNS_PRIVATE_KEY",
+      "PUSH_TOKEN_ENCRYPTION_KEY",
+      "PUSH_TOKEN_HMAC_KEY"
+    ]
   },
   "triggers": {
     "crons": ["0 21 * * *", "30 22 * * *", "30 23 * * *", "30 0 * * *"]

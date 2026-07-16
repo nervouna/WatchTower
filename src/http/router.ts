@@ -9,6 +9,7 @@ import {
   setEntityFeedback,
 } from "../storage/repository";
 import { enqueueBriefAudio } from "../audio/jobs";
+import { handlePushSubscriptionRequest } from "../push/subscriptions";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -170,11 +171,14 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY">,
+  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+  if (url.pathname === "/api/mobile/v1/push-subscriptions") {
+    return handlePushSubscriptionRequest(request, env, now);
+  }
   if (url.pathname === "/api/feedback" || url.pathname.startsWith("/api/feedback/")) {
     return handleFeedbackRequest(request, env, now);
   }

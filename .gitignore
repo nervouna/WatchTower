@@ -9,3 +9,4 @@ coverage/
 *.tsbuildinfo
 worker-startup.cpuprofile
 .DS_Store
+*.p8

@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: WatchTower Public API
+  version: 1.0.0
+  description: Stable read-only contract consumed by the WatchTower web and mobile clients.
+servers:
+  - url: https://watchtower.damao.io
+paths:
+  /api/briefs/latest:
+    get:
+      operationId: getLatestBrief
+      responses:
+        '200':
+          description: Latest published brief
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Brief' } }
+        '304': { description: Cached representation is current }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /api/briefs/{date}:
+    parameters:
+      - $ref: '#/components/parameters/Date'
+    get:
+      operationId: getBrief
+      responses:
+        '200':
+          description: Published brief for the requested UTC date
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Brief' } }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /api/briefs:
+    get:
+      operationId: listBriefs
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Cursor-paginated brief summaries
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/BriefList' } }
+  /api/briefs/{date}/audio:
+    parameters:
+      - $ref: '#/components/parameters/Date'
+    get:
+      operationId: getBriefAudio
+      responses:
+        '200': { description: Range-capable WAV audio stream }
+        '206': { description: Partial WAV audio stream }
+        '404': { $ref: '#/components/responses/ApiError' }
+  /api/mobile/v1/push-subscriptions:
+    put:
+      operationId: upsertPushSubscription
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/PushSubscription' } }
+      responses:
+        '204': { description: Subscription stored }
+        '400': { $ref: '#/components/responses/ApiError' }
+        '429': { $ref: '#/components/responses/ApiError' }
+    delete:
+      operationId: deletePushSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [installationSecret]
+              properties:
+                installationSecret: { type: string, minLength: 43, maxLength: 43 }
+      responses:
+        '204': { description: Subscription removed or already absent }
+components:
+  parameters:
+    Date:
+      name: date
+      in: path
+      required: true
+      schema: { type: string, format: date }
+  responses:
+    ApiError:
+      description: Stable error envelope
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+  schemas:
+    SourceKind: { type: string, enum: [hacker-news, product-hunt, github, kickstarter] }
+    BriefStatus: { type: string, enum: [complete, partial] }
+    SourceLink:
+      type: object
+      required: [source, kind, label, url]
+      properties:
+        source: { $ref: '#/components/schemas/SourceKind' }
+        kind: { type: string, enum: [platform, original] }
+        label: { type: string }
+        url: { type: string, format: uri }
+    BriefItem:
+      type: object
+      required: [rank, entityId, title, summary, whyItMatters, tags, continuity, sources]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        entityId: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        whyItMatters: { type: string }
+        tags: { type: array, items: { type: string } }
+        continuity: { type: object, required: [kind], additionalProperties: true }
+        sources: { type: array, items: { $ref: '#/components/schemas/SourceLink' } }
+    BriefAudio:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [pending, failed, ready] }
+        url: { type: string }
+        durationSeconds: { type: number }
+        generatedAt: { type: string, format: date-time }
+        transcript: { type: string }
+        provider: { type: string }
+        synthetic: { type: boolean }
+    Brief:
+      type: object
+      required: [date, status, publishedAt, generatedAt, headline, intro, missingSources, sourceCounts, audio, items]
+      properties:
+        date: { type: string, format: date }
+        status: { $ref: '#/components/schemas/BriefStatus' }
+        publishedAt: { type: string, format: date-time }
+        generatedAt: { type: string, format: date-time }
+        headline: { type: string }
+        intro: { type: string }
+        missingSources: { type: array, items: { $ref: '#/components/schemas/SourceKind' } }
+        sourceCounts: { type: object, additionalProperties: { type: integer } }
+        audio: { anyOf: [{ $ref: '#/components/schemas/BriefAudio' }, { type: 'null' }] }
+        items: { type: array, items: { $ref: '#/components/schemas/BriefItem' } }
+    BriefSummary:
+      type: object
+      required: [date, status, publishedAt, itemCount, missingSources]
+      properties:
+        date: { type: string, format: date }
+        status: { $ref: '#/components/schemas/BriefStatus' }
+        publishedAt: { type: string, format: date-time }
+        itemCount: { type: integer, minimum: 0 }
+        missingSources: { type: array, items: { $ref: '#/components/schemas/SourceKind' } }
+    BriefList:
+      type: object
+      required: [briefs, nextCursor]
+      properties:
+        briefs: { type: array, items: { $ref: '#/components/schemas/BriefSummary' } }
+        nextCursor: { anyOf: [{ type: string }, { type: 'null' }] }
+    PushSubscription:
+      type: object
+      required: [installationSecret, deviceToken, environment, appVersion]
+      properties:
+        installationSecret: { type: string, minLength: 43, maxLength: 43 }
+        deviceToken: { type: string, pattern: '^[a-f0-9]{64}$' }
+        environment: { type: string, enum: [sandbox, production] }
+        appVersion: { type: string }
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }

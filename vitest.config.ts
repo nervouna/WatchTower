@@ -14,6 +14,11 @@ export default defineConfig({
           WATCHTOWER_FEEDBACK_TOKEN: "test-feedback-token",
           MIMO_API_KEY: process.env.MIMO_API_KEY ?? "test-mimo-key",
           RUN_AUDIO_E2E: process.env.RUN_AUDIO_E2E ?? "false",
+          APNS_TEAM_ID: "test-team-id",
+          APNS_KEY_ID: "test-key-id",
+          APNS_PRIVATE_KEY: "test-private-key",
+          PUSH_TOKEN_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          PUSH_TOKEN_HMAC_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
         },
         serviceBindings: {
           ASSETS: () => new Response("asset"),

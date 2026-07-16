@@ -1,0 +1,33 @@
+{
+  "date": "2026-07-17",
+  "status": "complete",
+  "publishedAt": "2026-07-17T00:00:00.000Z",
+  "generatedAt": "2026-07-16T23:30:00.000Z",
+  "headline": "开源工具与新型硬件正在重塑产品开发",
+  "intro": "今天值得关注的信号集中在开发工具、AI 基础设施与小型硬件团队。",
+  "missingSources": [],
+  "sourceCounts": { "hacker-news": 1, "product-hunt": 1, "github": 1, "kickstarter": 1 },
+  "audio": {
+    "status": "ready",
+    "url": "/api/briefs/2026-07-17/audio",
+    "durationSeconds": 180,
+    "generatedAt": "2026-07-17T00:05:00.000Z",
+    "transcript": "这是今天的 WatchTower 简报。",
+    "provider": "xiaomi-mimo",
+    "synthetic": true
+  },
+  "items": [
+    {
+      "rank": 1,
+      "entityId": "entity_00000000000000000000000000000001",
+      "title": "一个值得持续跟踪的开发工具",
+      "summary": "项目发布了面向真实工作流的新版本。",
+      "whyItMatters": "它把原本分散的步骤收进一个可验证的工作流。",
+      "tags": ["开发工具", "开源"],
+      "continuity": { "kind": "new" },
+      "sources": [
+        { "source": "github", "kind": "platform", "label": "GitHub", "url": "https://github.com/example/project" }
+      ]
+    }
+  ]
+}
