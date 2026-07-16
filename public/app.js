@@ -168,6 +168,46 @@ function renderError(title, message) {
   app.replaceChildren(section);
 }
 
+function formatDuration(seconds) {
+  const rounded = Math.max(0, Math.round(seconds));
+  return `${Math.floor(rounded / 60)} 分 ${String(rounded % 60).padStart(2, "0")} 秒`;
+}
+
+function renderBriefAudio(audio) {
+  if (!audio) return null;
+  const section = element("section", `brief-audio brief-audio-${audio.status}`);
+  section.setAttribute("aria-label", "本期语音简报");
+  const heading = element("div", "audio-heading");
+  heading.append(element("h2", "audio-title", "约 3 分钟听完本期"), element("span", "audio-ai-label", "AI 语音，由小米 MiMo 合成"));
+  section.append(heading);
+  if (audio.status === "pending") {
+    section.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));
+    return section;
+  }
+  if (audio.status === "failed") {
+    section.append(element("p", "audio-state-copy", "语音版暂时不可用，文字简报不受影响。"));
+    return section;
+  }
+  const player = element("audio", "audio-player");
+  player.controls = true;
+  player.preload = "metadata";
+  player.src = audio.url;
+  const status = element("p", "audio-meta", `实际时长 ${formatDuration(audio.durationSeconds)}`);
+  player.addEventListener("loadedmetadata", () => {
+    if (Number.isFinite(player.duration)) status.textContent = `实际时长 ${formatDuration(player.duration)}`;
+  });
+  player.addEventListener("error", () => {
+    player.hidden = true;
+    status.className = "audio-state-copy audio-error";
+    status.setAttribute("role", "status");
+    status.textContent = "音频加载失败，请稍后刷新。文字简报仍可正常阅读。";
+  });
+  const transcript = element("details", "audio-transcript");
+  transcript.append(element("summary", "transcript-summary", "查看逐字稿"), element("p", "transcript-copy", audio.transcript));
+  section.append(player, status, transcript);
+  return section;
+}
+
 async function renderBrief(brief, isLatest) {
   document.title = `${brief.date} · WatchTower 热点简报`;
   const fragment = document.createDocumentFragment();
@@ -195,6 +235,8 @@ async function renderBrief(brief, isLatest) {
     element("span", "meta-item", `${brief.items.length} 条热点`),
   );
   hero.append(metadata);
+  const audio = renderBriefAudio(brief.audio);
+  if (audio) hero.append(audio);
   const coverage = element("dl", "coverage");
   for (const [source, name] of Object.entries(sourceNames)) {
     const item = element("div", "coverage-item");

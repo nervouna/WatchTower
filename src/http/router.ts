@@ -1,5 +1,6 @@
 import { FEEDBACK_VALUES, type FeedbackValue } from "../domain/types";
 import {
+  getBriefAudio,
   getBrief,
   getEntityFeedback,
   getLatestBrief,
@@ -7,8 +8,10 @@ import {
   removeEntityFeedback,
   setEntityFeedback,
 } from "../storage/repository";
+import { enqueueBriefAudio } from "../audio/jobs";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
+function audioEnabled(value: unknown): boolean { return value === "true"; }
 
 interface ApiError {
   error: { code: string; message: string };
@@ -108,6 +111,19 @@ async function handleFeedbackRequest(request: Request, env: Pick<Env, "DB" | "WA
     : feedbackError("FEEDBACK_TARGET_NOT_FOUND", "未找到该简报中的反馈对象。", 404);
 }
 
+async function handleAdminAudioRequest(request: Request, env: Pick<Env, "DB" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY">, now: Date): Promise<Response> {
+  if (request.method !== "POST") return feedbackError("METHOD_NOT_ALLOWED", "此接口仅支持 POST。", 405, { Allow: "POST" });
+  if (!(await validFeedbackToken(request, env.WATCHTOWER_FEEDBACK_TOKEN))) return feedbackError("UNAUTHORIZED", "反馈凭证无效。", 401, { "WWW-Authenticate": "Bearer" });
+  const match = /^\/api\/admin\/brief-audio\/([^/]+)$/u.exec(new URL(request.url).pathname);
+  const date = match?.[1] ?? "";
+  if (!isValidUtcDate(date)) return feedbackError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+  if (!audioEnabled(env.BRIEF_AUDIO_ENABLED) || env.MIMO_API_KEY.length === 0) return feedbackError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
+  const status = await enqueueBriefAudio(env, date, now);
+  if (status === "not-found") return feedbackError("BRIEF_NOT_FOUND", "未找到已发布简报。", 404);
+  if (status === "disabled") return feedbackError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
+  return feedbackResponse({ briefDate: date, status });
+}
+
 async function etagFor(body: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -154,13 +170,51 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN">,
+  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
   if (url.pathname === "/api/feedback" || url.pathname.startsWith("/api/feedback/")) {
     return handleFeedbackRequest(request, env, now);
+  }
+  if (url.pathname.startsWith("/api/admin/brief-audio/")) return handleAdminAudioRequest(request, env, now);
+
+  const audioMatch = /^\/api\/briefs\/([^/]+)\/audio$/u.exec(url.pathname);
+  if (audioMatch?.[1]) {
+    if (request.method !== "GET" && request.method !== "HEAD") return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
+    const date = audioMatch[1];
+    if (!isValidUtcDate(date)) return apiError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+    const brief = await getBrief(env.DB, date, now.toISOString());
+    const audio = brief ? await getBriefAudio(env.DB, date) : null;
+    if (!brief || audio?.status !== "ready" || !audio.object_key) return apiError("BRIEF_AUDIO_NOT_FOUND", "未找到语音简报。", 404);
+    const object = await env.BRIEF_AUDIO.head(audio.object_key);
+    if (!object) return apiError("BRIEF_AUDIO_NOT_FOUND", "未找到语音简报。", 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("ETag", object.httpEtag);
+    headers.set("Accept-Ranges", "bytes");
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Cache-Control", "public, max-age=3600");
+    if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+    if (request.method === "HEAD") {
+      headers.set("Content-Length", String(object.size));
+      return new Response(null, { status: 200, headers });
+    }
+    const rangeHeader = request.headers.get("Range");
+    if (!rangeHeader) {
+      const body = await env.BRIEF_AUDIO.get(audio.object_key);
+      if (!body) return apiError("BRIEF_AUDIO_NOT_FOUND", "未找到语音简报。", 404);
+      headers.set("Content-Length", String(object.size));
+      return new Response(body.body, { status: 200, headers });
+    }
+    const range = parseByteRange(rangeHeader, object.size);
+    if (!range) return apiError("INVALID_RANGE", "Range 请求无效。", 416, { "Content-Range": `bytes */${String(object.size)}` });
+    const body = await env.BRIEF_AUDIO.get(audio.object_key, { range });
+    if (!body) return apiError("BRIEF_AUDIO_NOT_FOUND", "未找到语音简报。", 404);
+    headers.set("Content-Length", String(range.length));
+    headers.set("Content-Range", `bytes ${String(range.offset)}-${String(range.offset + range.length - 1)}/${String(object.size)}`);
+    return new Response(body.body, { status: 206, headers });
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
     return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
@@ -207,4 +261,20 @@ export async function handleRequest(
   }
 
   return apiError("API_NOT_FOUND", "未找到该 API。", 404);
+}
+
+function parseByteRange(header: string, size: number): { offset: number; length: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(header);
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isInteger(suffix) || suffix <= 0) return null;
+    const length = Math.min(suffix, size);
+    return { offset: size - length, length };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  if (!Number.isInteger(start) || !Number.isInteger(requestedEnd) || start < 0 || start >= size || requestedEnd < start) return null;
+  const end = Math.min(requestedEnd, size - 1);
+  return { offset: start, length: end - start + 1 };
 }

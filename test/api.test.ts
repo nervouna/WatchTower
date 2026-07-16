@@ -33,7 +33,8 @@ const now = new Date("2026-07-16T01:00:00.000Z");
 
 describe("public API", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.exec("DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
   });
 
   it("returns latest published brief with public caching, CORS, and ETag", async () => {
@@ -82,6 +83,41 @@ describe("public API", () => {
     const response = await handleRequest(new Request("https://example.com/api/briefs/latest", { method: "POST" }), env, now);
     expect(response.status).toBe(405);
     expect(response.headers.get("Allow")).toBe("GET, HEAD");
+  });
+
+  it("streams ready audio with HEAD, ETag, CORS, and byte ranges", async () => {
+    await replaceBrief(env.DB, draft());
+    const bytes = new TextEncoder().encode("0123456789");
+    await env.BRIEF_AUDIO.put("briefs/2026-07-16/hash.wav", bytes, { httpMetadata: { contentType: "audio/wav" } });
+    await env.DB.prepare(
+      `INSERT INTO brief_audio (brief_date, content_hash, status, script_json, object_key, duration_seconds, provider, model, voice, prompt_version, attempt_count, created_at, updated_at, generated_at)
+       VALUES (?, ?, 'ready', ?, ?, 180, 'xiaomi-mimo', 'mimo-v2.5-tts', '冰糖', 'narration-v1', 1, ?, ?, ?)`
+    ).bind("2026-07-16", "hash", JSON.stringify({ opening_zh: "开场", items: [], closing_zh: "结尾" }), "briefs/2026-07-16/hash.wav", now.toISOString(), now.toISOString(), now.toISOString()).run();
+    const full = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio"), env, now);
+    expect(full.status).toBe(200);
+    expect(full.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(full.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(new TextDecoder().decode(await full.arrayBuffer())).toBe("0123456789");
+    const range = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio", { headers: { Range: "bytes=2-5" } }), env, now);
+    expect(range.status).toBe(206);
+    expect(range.headers.get("Content-Range")).toBe("bytes 2-5/10");
+    expect(new TextDecoder().decode(await range.arrayBuffer())).toBe("2345");
+    const head = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio", { method: "HEAD" }), env, now);
+    expect(head.headers.get("Content-Length")).toBe("10");
+    const cached = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio", { headers: { "If-None-Match": head.headers.get("ETag")! } }), env, now);
+    expect(cached.status).toBe(304);
+  });
+
+  it("protects and idempotently queues the admin audio endpoint without public CORS", async () => {
+    await replaceBrief(env.DB, draft());
+    const unauthorized = await handleRequest(new Request("https://example.com/api/admin/brief-audio/2026-07-16", { method: "POST" }), env, now);
+    expect(unauthorized.status).toBe(401);
+    const request = () => new Request("https://example.com/api/admin/brief-audio/2026-07-16", { method: "POST", headers: { Authorization: "Bearer test-feedback-token" } });
+    const queued = await handleRequest(request(), env, now);
+    expect(await queued.json()).toMatchObject({ briefDate: "2026-07-16", status: "queued" });
+    expect(queued.headers.get("Cache-Control")).toBe("no-store");
+    expect(queued.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(await (await handleRequest(request(), env, now)).json()).toMatchObject({ status: "already-pending" });
   });
 
   it("authenticates, stores, reads, replaces, and clears entity feedback without caching or CORS", async () => {

@@ -24,8 +24,35 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BRIEF_AUDIO",
+      "bucket_name": "watchtower-brief-audio"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "BRIEF_AUDIO_QUEUE",
+        "queue": "watchtower-brief-audio-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "watchtower-brief-audio-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 2,
+        "max_concurrency": 1,
+        "retry_delay": 60
+      }
+    ]
+  },
+  "vars": {
+    "BRIEF_AUDIO_ENABLED": "true"
+  },
   "secrets": {
-    "required": ["TAVILY_API_KEY", "DEEPSEEK_API_KEY", "WATCHTOWER_FEEDBACK_TOKEN"]
+    "required": ["TAVILY_API_KEY", "DEEPSEEK_API_KEY", "WATCHTOWER_FEEDBACK_TOKEN", "MIMO_API_KEY"]
   },
   "triggers": {
     "crons": ["0 21 * * *", "30 22 * * *", "30 23 * * *", "30 0 * * *"]

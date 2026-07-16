@@ -8,6 +8,11 @@ import {
   listBriefs,
   getEntityFeedback,
   removeEntityFeedback,
+  getBriefAudio,
+  queueBriefAudio,
+  claimBriefAudio,
+  saveBriefAudioScript,
+  readyBriefAudio,
   replaceBrief,
   setEntityFeedback,
   upsertCandidates,
@@ -67,13 +72,29 @@ function briefDraft(date: string, title = "首个热点项目"): BriefDraft {
 
 describe("D1 repository", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
+    await env.DB.exec("DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
   });
 
   it("creates all required tables through migrations", async () => {
     const result = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
     const names = result.results.map((row) => row.name);
-    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources", "entity_feedback"]));
+    expect(names).toEqual(expect.arrayContaining(["ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources", "entity_feedback", "brief_audio"]));
+  });
+
+  it("hydrates audio states and claims one content hash idempotently", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T01:00:00.000Z"))?.audio).toBeNull();
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:00:00.000Z")).toBe("queued");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
+    expect((await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:02:00.000Z"))?.attempt_count).toBe(1);
+    expect(await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:03:00.000Z")).toBeNull();
+    expect((await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:04:00.000Z", true))?.attempt_count).toBe(2);
+    const script = { opening_zh: "开场", items: [{ entity_id: "id", text_zh: "正文" }], closing_zh: "结尾" };
+    await saveBriefAudioScript(env.DB, "2026-07-16", "hash-a", JSON.stringify(script), "2026-07-16T01:04:00.000Z");
+    await readyBriefAudio(env.DB, "2026-07-16", "hash-a", "briefs/a.wav", 180, "2026-07-16T01:05:00.000Z");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:06:00.000Z")).toBe("already-ready");
+    expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({ status: "ready", durationSeconds: 180, transcript: "开场\n\n正文\n\n结尾" });
+    expect((await getBriefAudio(env.DB, "2026-07-16"))?.object_key).toBe("briefs/a.wav");
   });
 
   it("skips a successfully completed idempotent stage", async () => {

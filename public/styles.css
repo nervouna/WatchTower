@@ -220,6 +220,74 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.brief-audio {
+  margin-top: 32px;
+  padding: 20px 24px;
+  border-radius: var(--radius-control);
+  background: var(--surface-subtle);
+}
+
+.audio-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.audio-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.audio-ai-label,
+.audio-meta {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.audio-player {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 16px;
+  color-scheme: light dark;
+}
+
+.audio-meta,
+.audio-state-copy {
+  margin: 12px 0 0;
+}
+
+.audio-state-copy {
+  color: var(--text-secondary);
+}
+
+.audio-error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.audio-transcript {
+  margin-top: 12px;
+}
+
+.transcript-summary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.transcript-copy {
+  max-width: 65ch;
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
 .status {
   display: inline-flex;
   min-height: 28px;
@@ -796,6 +864,14 @@ button:focus-visible,
 
   .coverage {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .brief-audio {
+    padding: 16px;
+  }
+
+  .audio-heading {
+    display: grid;
   }
 
   .section-header {

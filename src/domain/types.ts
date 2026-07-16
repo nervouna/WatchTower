@@ -73,8 +73,28 @@ export interface BriefPayload {
   intro: string;
   missingSources: SourceKind[];
   sourceCounts: Record<SourceKind, number>;
+  audio: BriefAudio | null;
   items: BriefItem[];
 }
+
+export interface NarrationScript {
+  opening_zh: string;
+  items: Array<{ entity_id: string; text_zh: string }>;
+  closing_zh: string;
+}
+
+export type BriefAudio =
+  | { status: "pending" }
+  | { status: "failed" }
+  | {
+      status: "ready";
+      url: string;
+      durationSeconds: number;
+      generatedAt: string;
+      transcript: string;
+      provider: "xiaomi-mimo";
+      synthetic: true;
+    };
 
 export interface BriefSummary {
   date: string;

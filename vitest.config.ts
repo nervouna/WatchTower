@@ -12,6 +12,8 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
           WATCHTOWER_FEEDBACK_TOKEN: "test-feedback-token",
+          MIMO_API_KEY: process.env.MIMO_API_KEY ?? "test-mimo-key",
+          RUN_AUDIO_E2E: process.env.RUN_AUDIO_E2E ?? "false",
         },
         serviceBindings: {
           ASSETS: () => new Response("asset"),
