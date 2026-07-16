@@ -13,7 +13,9 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    UNUserNotificationCenter.current().delegate = self
+    return launched
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -77,6 +79,7 @@ import UserNotifications
   ) {
     let token = tokenData.map { String(format: "%02x", $0) }.joined()
     deviceToken = token
+    NSLog("WatchTower push registration succeeded")
     pendingRegistrationResult?(tokenPayload(token))
     pendingRegistrationResult = nil
   }
@@ -109,15 +112,16 @@ import UserNotifications
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    NSLog("WatchTower foreground notification received")
     completionHandler([.banner, .sound])
   }
 
   private func tokenPayload(_ token: String) -> [String: String] {
-    #if DEBUG
-    return ["status": "authorized", "token": token, "environment": "sandbox"]
-    #else
-    return ["status": "authorized", "token": token, "environment": "production"]
-    #endif
+    let entitlementEnvironment = Bundle.main.object(
+      forInfoDictionaryKey: "WatchTowerAPNSEnvironment"
+    ) as? String
+    let environment = entitlementEnvironment == "development" ? "sandbox" : "production"
+    return ["status": "authorized", "token": token, "environment": environment]
   }
 
   private func statusName(_ status: UNAuthorizationStatus) -> String {
