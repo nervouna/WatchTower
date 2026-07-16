@@ -1,4 +1,5 @@
 import { encryptToken, hmacHex, stablePushId } from "./crypto";
+import { PUSH_APP_IDS, type ApnsEnvironment, type PushAppId } from "./apns";
 import { removePushSubscription, upsertPushSubscription } from "./repository";
 
 interface MobilePushError {
@@ -28,6 +29,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const INSTALLATION_SECRET = /^[A-Za-z0-9_-]{43}$/u;
 const DEVICE_TOKEN = /^[a-f0-9]{64}$/u;
 const APP_VERSION = /^[0-9A-Za-z.+-]{1,32}$/u;
+
+function appEnvironmentIsValid(appId: PushAppId, environment: ApnsEnvironment): boolean {
+  return (appId === PUSH_APP_IDS.development && environment === "sandbox") ||
+    (appId === PUSH_APP_IDS.production && environment === "production");
+}
 
 async function readBody(request: Request): Promise<unknown> {
   const length = Number(request.headers.get("Content-Length") ?? "0");
@@ -80,6 +86,13 @@ export async function handlePushSubscriptionRequest(request: Request, env: Subsc
   ) {
     return error("INVALID_SUBSCRIPTION", "推送订阅内容无效。", 400);
   }
+  const appId = body.appId === undefined ? PUSH_APP_IDS.production : body.appId;
+  if (
+    (appId !== PUSH_APP_IDS.development && appId !== PUSH_APP_IDS.production) ||
+    (body.appId !== undefined && !appEnvironmentIsValid(appId, body.environment))
+  ) {
+    return error("INVALID_PUSH_APP_ENVIRONMENT", "推送应用与 APNs 环境不匹配。", 400);
+  }
   const encrypted = await encryptToken(env.PUSH_TOKEN_ENCRYPTION_KEY, body.deviceToken);
   const tokenHmac = await hmacHex(env.PUSH_TOKEN_HMAC_KEY, body.deviceToken);
   await upsertPushSubscription(env.DB, {
@@ -89,6 +102,7 @@ export async function handlePushSubscriptionRequest(request: Request, env: Subsc
     token_ciphertext: encrypted.ciphertext,
     token_iv: encrypted.iv,
     environment: body.environment,
+    app_id: appId,
     app_version: body.appVersion,
     active: 1,
     createdAt: now.toISOString(),

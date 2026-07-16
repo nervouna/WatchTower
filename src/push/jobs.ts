@@ -1,4 +1,4 @@
-import { sendApnsNotification, type ApnsConfig } from "./apns";
+import { PUSH_APP_IDS, sendApnsNotification, type ApnsConfig, type ApnsEnvironment, type PushAppId } from "./apns";
 import { decryptToken, stablePushId } from "./crypto";
 import {
   activePushSubscriptions,
@@ -19,8 +19,33 @@ export type BriefPushJob =
 
 type PushEnv = Pick<
   Env,
-  "DB" | "BRIEF_PUSH_QUEUE" | "APNS_TEAM_ID" | "APNS_KEY_ID" | "APNS_PRIVATE_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY"
+  "DB" | "BRIEF_PUSH_QUEUE" | "APNS_TEAM_ID" |
+  "APNS_SANDBOX_KEY_ID" | "APNS_SANDBOX_PRIVATE_KEY" |
+  "APNS_PRODUCTION_KEY_ID" | "APNS_PRODUCTION_PRIVATE_KEY" |
+  "PUSH_TOKEN_ENCRYPTION_KEY"
 >;
+
+function apnsConfig(
+  env: PushEnv,
+  environment: ApnsEnvironment,
+  appId: PushAppId,
+): ApnsConfig {
+  if (environment === "sandbox") {
+    return {
+      teamId: env.APNS_TEAM_ID,
+      keyId: env.APNS_SANDBOX_KEY_ID,
+      privateKey: env.APNS_SANDBOX_PRIVATE_KEY,
+      topic: appId,
+    };
+  }
+  if (appId !== PUSH_APP_IDS.production) throw new Error("APNS_APP_ENVIRONMENT_INVALID");
+  return {
+    teamId: env.APNS_TEAM_ID,
+    keyId: env.APNS_PRODUCTION_KEY_ID,
+    privateKey: env.APNS_PRODUCTION_PRIVATE_KEY,
+    topic: appId,
+  };
+}
 
 function stableError(error: unknown): string {
   const value = error instanceof Error ? error.message.split(":", 1)[0] : "PUSH_UNKNOWN_ERROR";
@@ -84,12 +109,7 @@ export async function processPushDelivery(
   if (!delivery) return "ignored";
   try {
     const deviceToken = await decryptToken(env.PUSH_TOKEN_ENCRYPTION_KEY, delivery.token_ciphertext, delivery.token_iv);
-    const config: ApnsConfig = {
-      teamId: env.APNS_TEAM_ID,
-      keyId: env.APNS_KEY_ID,
-      privateKey: env.APNS_PRIVATE_KEY,
-      topic: "io.damao.watchtower",
-    };
+    const config = apnsConfig(env, delivery.environment, delivery.app_id);
     const result = await transport(config, {
       deviceToken,
       environment: delivery.environment,

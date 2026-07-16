@@ -82,6 +82,8 @@ describe("D1 repository", () => {
       "ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources",
       "entity_feedback", "brief_audio", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
     ]));
+    const pushColumns = await env.DB.prepare("PRAGMA table_info(push_subscriptions)").all<{ name: string }>();
+    expect(pushColumns.results.map((column) => column.name)).toContain("app_id");
   });
 
   it("hydrates audio states and claims one content hash idempotently", async () => {

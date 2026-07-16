@@ -116,17 +116,20 @@ cd mobile
 flutter pub get
 flutter analyze
 flutter test
-flutter build ios --release --no-codesign
+flutter build ios --flavor dev --debug --no-codesign
+flutter build ipa --flavor prod --release
 flutter build appbundle
 ```
 
 默认 API 地址是 `https://watchtower.damao.io`。本地联调时使用非秘密编译参数覆盖：
 
 ```sh
-flutter run --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
+flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
 ```
 
-iOS Bundle ID 与 Android applicationId 均为 `io.damao.watchtower`。推送需要 Apple Developer App ID、Push Notifications capability、真实设备，以及以下 Worker secrets：`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY`、`PUSH_TOKEN_ENCRYPTION_KEY`、`PUSH_TOKEN_HMAC_KEY`。私钥和加密密钥不得写入仓库或日志。
+iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`io.damao.watchtower.dev`、sandbox APNs），TestFlight/App Store 使用 `prod`（`io.damao.watchtower`、production APNs）。Android applicationId 仍为 `io.damao.watchtower`。
+
+推送需要两个已启用 Push Notifications 的 Apple Developer App ID、真实设备，以及以下 Worker secrets：`APNS_TEAM_ID`、`APNS_SANDBOX_KEY_ID`、`APNS_SANDBOX_PRIVATE_KEY`、`APNS_PRODUCTION_KEY_ID`、`APNS_PRODUCTION_PRIVATE_KEY`、`PUSH_TOKEN_ENCRYPTION_KEY`、`PUSH_TOKEN_HMAC_KEY`。私钥和加密密钥不得写入仓库或日志。Production APNs 必须通过 TestFlight 或 production provisioning 验证；本地 Debug 构建始终使用 sandbox。
 
 ## HTTP API
 

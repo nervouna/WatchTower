@@ -10,6 +10,8 @@ import { createPushDelivery } from "../src/push/repository";
 const encryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 const hmacKey = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
 const emptyQueueMetrics = { backlogCount: 0, backlogBytes: 0 };
+const devAppId = "io.damao.watchtower.dev";
+const productionAppId = "io.damao.watchtower";
 
 function queueWithSend(send: Queue["send"]): Queue {
   return {
@@ -42,17 +44,17 @@ describe("mobile push", () => {
     const request = (deviceToken: string) => new Request("https://example.com/api/mobile/v1/push-subscriptions", {
       method: "PUT",
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.1" },
-      body: JSON.stringify({ installationSecret, deviceToken, environment: "sandbox", appVersion: "1.0.0+1" }),
+      body: JSON.stringify({ installationSecret, deviceToken, environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
     expect((await handleRequest(request("a".repeat(64)), env)).status).toBe(204);
     expect((await handleRequest(request("b".repeat(64)), env)).status).toBe(204);
 
     const rows = await env.DB.prepare(
-      "SELECT installation_hmac, token_hmac, token_ciphertext, token_iv, app_version, active FROM push_subscriptions",
+      "SELECT installation_hmac, token_hmac, token_ciphertext, token_iv, environment, app_id, app_version, active FROM push_subscriptions",
     ).all();
     expect(rows.results).toHaveLength(1);
     expect(JSON.stringify(rows.results[0])).not.toContain("b".repeat(32));
-    expect(rows.results[0]).toMatchObject({ app_version: "1.0.0+1", active: 1 });
+    expect(rows.results[0]).toMatchObject({ environment: "sandbox", app_id: devAppId, app_version: "1.0.0+1", active: 1 });
 
     const removed = await handleRequest(new Request("https://example.com/api/mobile/v1/push-subscriptions", {
       method: "DELETE",
@@ -72,6 +74,49 @@ describe("mobile push", () => {
     expect(response.status).toBe(400);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("accepts only supported app and APNs environment pairs", async () => {
+    const request = (appId: string, environment: string) => new Request("https://example.com/api/mobile/v1/push-subscriptions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.10" },
+      body: JSON.stringify({
+        installationSecret: "D".repeat(43),
+        deviceToken: "e".repeat(64),
+        appId,
+        environment,
+        appVersion: "1.0.0+2",
+      }),
+    });
+
+    expect((await handleRequest(request(devAppId, "production"), env)).status).toBe(400);
+    const mismatchedProduction = await handleRequest(request(productionAppId, "sandbox"), env);
+    expect(mismatchedProduction.status).toBe(400);
+    expect(await mismatchedProduction.json()).toMatchObject({
+      error: { code: "INVALID_PUSH_APP_ENVIRONMENT" },
+    });
+    expect((await handleRequest(request("io.example.watchtower", "sandbox"), env)).status).toBe(400);
+  });
+
+  it("preserves legacy subscriptions that omit appId during the compatibility rollout", async () => {
+    const response = await handleRequest(new Request("https://example.com/api/mobile/v1/push-subscriptions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.11" },
+      body: JSON.stringify({
+        installationSecret: "E".repeat(43),
+        deviceToken: "f".repeat(64),
+        environment: "sandbox",
+        appVersion: "1.0.0+1",
+      }),
+    }), env);
+
+    expect(response.status).toBe(204);
+    expect(await env.DB.prepare(
+      "SELECT app_id, environment FROM push_subscriptions WHERE token_hmac = ?",
+    ).bind(await hmacHex(hmacKey, "f".repeat(64))).first()).toMatchObject({
+      app_id: productionAppId,
+      environment: "sandbox",
+    });
   });
 
   it("creates ES256 provider tokens and classifies APNs responses", async () => {
@@ -116,7 +161,7 @@ describe("mobile push", () => {
     const registration = new Request("https://example.com/api/mobile/v1/push-subscriptions", {
       method: "PUT",
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.2" },
-      body: JSON.stringify({ installationSecret: "B".repeat(43), deviceToken: "c".repeat(64), environment: "sandbox", appVersion: "1.0.0+1" }),
+      body: JSON.stringify({ installationSecret: "B".repeat(43), deviceToken: "c".repeat(64), environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
     expect((await handleRequest(registration, env, now)).status).toBe(204);
     expect(await enqueueBriefPush(env, "2026-07-17", now)).toBe("queued");
@@ -125,16 +170,86 @@ describe("mobile push", () => {
     await processPushFanout(env, { kind: "brief-push-fanout", briefDate: "2026-07-17" }, now);
     const delivery = await env.DB.prepare("SELECT id, status FROM brief_push_deliveries").first<{ id: string; status: string }>();
     expect(delivery?.status).toBe("queued");
+    let capturedConfig: { keyId: string; topic: string } | undefined;
+    const pushEnv = {
+      ...env,
+      APNS_SANDBOX_KEY_ID: "SANDBOX123",
+      APNS_SANDBOX_PRIVATE_KEY: "sandbox-private-key",
+      APNS_PRODUCTION_KEY_ID: "PRODUCTION",
+      APNS_PRODUCTION_PRIVATE_KEY: "production-private-key",
+    };
     const result = await processPushDelivery(
-      env,
+      pushEnv,
       { kind: "brief-push-delivery", deliveryId: delivery!.id, briefDate: "2026-07-17", headline: "今日发布标题" },
       now,
       false,
-      async () => ({ kind: "delivered" }),
+      async (config) => {
+        capturedConfig = config;
+        return { kind: "delivered" };
+      },
     );
     expect(result).toBe("delivered");
+    expect(capturedConfig).toMatchObject({ keyId: "SANDBOX123", topic: devAppId });
     expect((await env.DB.prepare("SELECT status FROM brief_push_deliveries WHERE id = ?").bind(delivery!.id).first<{ status: string }>())?.status).toBe("delivered");
-    expect((await env.DB.prepare("SELECT last_success_at FROM push_subscriptions").first<{ last_success_at: string | null }>())?.last_success_at).toBe(now.toISOString());
+    expect((await env.DB.prepare(
+      `SELECT subscription.last_success_at
+       FROM push_subscriptions AS subscription
+       JOIN brief_push_deliveries AS delivery ON delivery.subscription_id = subscription.id
+       WHERE delivery.id = ?`,
+    ).bind(delivery!.id).first<{ last_success_at: string | null }>())?.last_success_at).toBe(now.toISOString());
+  });
+
+  it("uses the production key and topic for a production subscription", async () => {
+    const now = new Date("2026-07-19T00:01:00.000Z");
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM brief_push_deliveries"),
+      env.DB.prepare("DELETE FROM brief_push_batches"),
+      env.DB.prepare("DELETE FROM push_subscriptions"),
+    ]);
+    await env.DB.prepare(
+      `INSERT INTO briefs (brief_date, status, publish_at, generated_at, headline, intro, missing_sources_json, model, prompt_version)
+       VALUES (?, 'complete', ?, ?, ?, 'intro', '[]', 'test', 'v1')`,
+    ).bind("2026-07-19", "2026-07-19T00:00:00.000Z", now.toISOString(), "生产标题").run();
+    const registration = new Request("https://example.com/api/mobile/v1/push-subscriptions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.19" },
+      body: JSON.stringify({
+        installationSecret: "F".repeat(43),
+        deviceToken: "1".repeat(64),
+        environment: "production",
+        appId: productionAppId,
+        appVersion: "1.0.0+2",
+      }),
+    });
+    expect((await handleRequest(registration, env, now)).status).toBe(204);
+    const subscription = await env.DB.prepare("SELECT id FROM push_subscriptions").first<{ id: string }>();
+    expect(await createPushDelivery(env.DB, {
+      id: "production-delivery",
+      briefDate: "2026-07-19",
+      subscriptionId: subscription!.id,
+      now: now.toISOString(),
+    })).toBe(true);
+
+    let capturedConfig: { keyId: string; topic: string } | undefined;
+    const result = await processPushDelivery(
+      {
+        ...env,
+        APNS_SANDBOX_KEY_ID: "SANDBOX123",
+        APNS_SANDBOX_PRIVATE_KEY: "sandbox-private-key",
+        APNS_PRODUCTION_KEY_ID: "PRODUCTION",
+        APNS_PRODUCTION_PRIVATE_KEY: "production-private-key",
+      },
+      { kind: "brief-push-delivery", deliveryId: "production-delivery", briefDate: "2026-07-19", headline: "生产标题" },
+      now,
+      false,
+      async (config) => {
+        capturedConfig = config;
+        return { kind: "delivered" };
+      },
+    );
+
+    expect(result).toBe("delivered");
+    expect(capturedConfig).toMatchObject({ keyId: "PRODUCTION", topic: productionAppId });
   });
 
   it("re-enqueues an existing queued delivery after a fanout send failure", async () => {
@@ -151,7 +266,7 @@ describe("mobile push", () => {
     const registration = new Request("https://example.com/api/mobile/v1/push-subscriptions", {
       method: "PUT",
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.3" },
-      body: JSON.stringify({ installationSecret: "C".repeat(43), deviceToken: "d".repeat(64), environment: "sandbox", appVersion: "1.0.0+1" }),
+      body: JSON.stringify({ installationSecret: "C".repeat(43), deviceToken: "d".repeat(64), environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
     expect((await handleRequest(registration, env, now)).status).toBe(204);
 

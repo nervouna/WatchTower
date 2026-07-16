@@ -111,6 +111,7 @@ class PushController extends ChangeNotifier with WidgetsBindingObserver {
       'installationSecret': await _installationSecret(),
       'deviceToken': token,
       'environment': environment,
+      'appId': package.packageName,
       'appVersion': '${package.version}+${package.buildNumber}',
     });
   }

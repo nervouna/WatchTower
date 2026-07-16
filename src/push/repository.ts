@@ -1,4 +1,4 @@
-import type { ApnsEnvironment } from "./apns";
+import type { ApnsEnvironment, PushAppId } from "./apns";
 
 export interface PushSubscriptionRow {
   id: string;
@@ -7,6 +7,7 @@ export interface PushSubscriptionRow {
   token_ciphertext: string;
   token_iv: string;
   environment: ApnsEnvironment;
+  app_id: PushAppId;
   app_version: string;
   active: number;
 }
@@ -20,6 +21,7 @@ export interface PushDeliveryRow {
   token_ciphertext: string;
   token_iv: string;
   environment: ApnsEnvironment;
+  app_id: PushAppId;
 }
 
 export async function upsertPushSubscription(
@@ -31,12 +33,12 @@ export async function upsertPushSubscription(
       .bind(input.token_hmac, input.installation_hmac),
     db.prepare(
       `INSERT INTO push_subscriptions (
-         id, installation_hmac, token_hmac, token_ciphertext, token_iv, environment,
+         id, installation_hmac, token_hmac, token_ciphertext, token_iv, environment, app_id,
          app_version, active, created_at, updated_at, disabled_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
        ON CONFLICT(installation_hmac) DO UPDATE SET
          token_hmac = excluded.token_hmac, token_ciphertext = excluded.token_ciphertext,
-         token_iv = excluded.token_iv, environment = excluded.environment,
+         token_iv = excluded.token_iv, environment = excluded.environment, app_id = excluded.app_id,
          app_version = excluded.app_version, active = 1, updated_at = excluded.updated_at,
          disabled_at = NULL`,
     ).bind(
@@ -46,6 +48,7 @@ export async function upsertPushSubscription(
       input.token_ciphertext,
       input.token_iv,
       input.environment,
+      input.app_id,
       input.app_version,
       input.createdAt,
       input.createdAt,
@@ -90,7 +93,7 @@ export async function claimPushBatch(db: D1Database, briefDate: string, now: str
 
 export async function activePushSubscriptions(db: D1Database): Promise<PushSubscriptionRow[]> {
   const result = await db.prepare(
-    `SELECT id, installation_hmac, token_hmac, token_ciphertext, token_iv, environment, app_version, active
+    `SELECT id, installation_hmac, token_hmac, token_ciphertext, token_iv, environment, app_id, app_version, active
      FROM push_subscriptions WHERE active = 1 ORDER BY id`,
   ).all<PushSubscriptionRow>();
   return result.results;
@@ -120,7 +123,7 @@ export async function claimPushDelivery(db: D1Database, id: string, now: string,
   if (result.meta.changes === 0) return null;
   return db.prepare(
     `SELECT delivery.id, delivery.brief_date, delivery.subscription_id, delivery.status, delivery.attempt_count,
-            subscription.token_ciphertext, subscription.token_iv, subscription.environment
+            subscription.token_ciphertext, subscription.token_iv, subscription.environment, subscription.app_id
      FROM brief_push_deliveries AS delivery
      JOIN push_subscriptions AS subscription ON subscription.id = delivery.subscription_id
      WHERE delivery.id = ?`,

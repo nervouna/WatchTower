@@ -1,6 +1,12 @@
 import { base64Url } from "./crypto";
 
 export type ApnsEnvironment = "sandbox" | "production";
+export type PushAppId = "io.damao.watchtower" | "io.damao.watchtower.dev";
+
+export const PUSH_APP_IDS = {
+  development: "io.damao.watchtower.dev",
+  production: "io.damao.watchtower",
+} as const satisfies Record<"development" | "production", PushAppId>;
 export type ApnsResult =
   | { kind: "delivered" }
   | { kind: "invalid"; errorCode: string }
