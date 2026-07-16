@@ -108,15 +108,10 @@ button:focus-visible,
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
   width: 32px;
   height: 32px;
-  place-items: center;
   border-radius: var(--radius-control);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 14px;
-  font-weight: 700;
 }
 
 .nav-links {
