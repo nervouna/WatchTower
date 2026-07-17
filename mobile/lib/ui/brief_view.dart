@@ -389,7 +389,7 @@ class _BriefItemCard extends StatelessWidget {
                   TextButton.icon(
                     onPressed: () => launchUrl(
                       source.url,
-                      mode: LaunchMode.externalApplication,
+                      mode: LaunchMode.inAppBrowserView,
                     ),
                     icon: const Icon(Icons.open_in_new, size: 16),
                     label: Text(source.label),
