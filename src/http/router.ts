@@ -7,9 +7,12 @@ import {
   listBriefs,
   removeEntityFeedback,
   setEntityFeedback,
+  isFeedbackAllowed,
+  removeAccountData,
 } from "../storage/repository";
 import { enqueueBriefAudio } from "../audio/jobs";
 import { handlePushSubscriptionRequest } from "../push/subscriptions";
+import { authenticate, AuthError, type AuthUser } from "../auth/auth0";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -22,30 +25,32 @@ function apiError(code: string, message: string, status: number, extraHeaders?: 
   return jsonResponse({ error: { code, message } } satisfies ApiError, status, extraHeaders, null, false);
 }
 
-function feedbackResponse(value: unknown, status = 200, extraHeaders?: HeadersInit): Response {
+function protectedResponse(value: unknown, status = 200, extraHeaders?: HeadersInit): Response {
   const headers = new Headers(extraHeaders);
   headers.set("Cache-Control", "no-store");
   if (status !== 204) headers.set("Content-Type", "application/json; charset=utf-8");
   return new Response(status === 204 ? null : JSON.stringify(value), { status, headers });
 }
 
-function feedbackError(code: string, message: string, status: number, extraHeaders?: HeadersInit): Response {
-  return feedbackResponse({ error: { code, message } } satisfies ApiError, status, extraHeaders);
+function protectedError(code: string, message: string, status: number, extraHeaders?: HeadersInit): Response {
+  return protectedResponse({ error: { code, message } } satisfies ApiError, status, extraHeaders);
 }
 
-async function validFeedbackToken(request: Request, configuredToken: string | undefined): Promise<boolean> {
-  if (!configuredToken) return false;
-  const authorization = request.headers.get("Authorization");
-  const suppliedToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-  const encoder = new TextEncoder();
-  const [suppliedDigest, configuredDigest] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(suppliedToken)),
-    crypto.subtle.digest("SHA-256", encoder.encode(configuredToken)),
-  ]);
-  const subtle = crypto.subtle as SubtleCrypto & {
-    timingSafeEqual(a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean;
-  };
-  return subtle.timingSafeEqual(suppliedDigest, configuredDigest) && suppliedToken.length > 0;
+type AuthRuntimeEnv = Pick<Env, "DB" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">;
+
+async function requireUser(request: Request, env: AuthRuntimeEnv): Promise<AuthUser | Response> {
+  try {
+    return await authenticate(request, env);
+  } catch (error) {
+    if (error instanceof AuthError && error.kind === "unavailable") return protectedError("AUTH_UNAVAILABLE", "登录服务暂不可用，请稍后重试。", 503);
+    return protectedError("UNAUTHORIZED", "登录凭证无效或已过期。", 401, { "WWW-Authenticate": "Bearer" });
+  }
+}
+
+async function requireAllowedUser(request: Request, env: AuthRuntimeEnv): Promise<AuthUser | Response> {
+  const user = await requireUser(request, env);
+  if (user instanceof Response) return user;
+  return (await isFeedbackAllowed(env.DB, user.id)) ? user : protectedError("FORBIDDEN", "当前账号没有此操作权限。", 403);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,47 +59,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const ENTITY_ID_PATTERN = /^entity_[a-f0-9]{32}$/u;
 
-async function handleFeedbackRequest(request: Request, env: Pick<Env, "DB" | "WATCHTOWER_FEEDBACK_TOKEN">, now: Date): Promise<Response> {
-  if (!env.WATCHTOWER_FEEDBACK_TOKEN) {
-    return feedbackError("FEEDBACK_UNAVAILABLE", "反馈功能暂不可用。", 503);
-  }
-  if (!(await validFeedbackToken(request, env.WATCHTOWER_FEEDBACK_TOKEN))) {
-    return feedbackError("UNAUTHORIZED", "反馈凭证无效。", 401, { "WWW-Authenticate": "Bearer" });
-  }
+async function handleFeedbackRequest(request: Request, env: AuthRuntimeEnv, now: Date): Promise<Response> {
+  const user = await requireAllowedUser(request, env);
+  if (user instanceof Response) return user;
 
   const url = new URL(request.url);
   if (url.pathname === "/api/feedback") {
     if (request.method !== "GET") {
-      return feedbackError("METHOD_NOT_ALLOWED", "此接口仅支持 GET。", 405, { Allow: "GET" });
+      return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 GET。", 405, { Allow: "GET" });
     }
     const entityIds = url.searchParams.getAll("entityId");
     if (entityIds.length > 20 || entityIds.some((entityId) => !ENTITY_ID_PATTERN.test(entityId))) {
-      return feedbackError("INVALID_ENTITY_IDS", "entityId 必须是最多 20 个有效实体标识。", 400);
+      return protectedError("INVALID_ENTITY_IDS", "entityId 必须是最多 20 个有效实体标识。", 400);
     }
-    return feedbackResponse({ feedback: await getEntityFeedback(env.DB, [...new Set(entityIds)]) });
+    return protectedResponse({ feedback: await getEntityFeedback(env.DB, [...new Set(entityIds)]) });
   }
 
   const match = /^\/api\/feedback\/([^/]+)$/u.exec(url.pathname);
-  if (!match?.[1]) return feedbackError("API_NOT_FOUND", "未找到该 API。", 404);
+  if (!match?.[1]) return protectedError("API_NOT_FOUND", "未找到该 API。", 404);
   const entityId = match[1];
-  if (!ENTITY_ID_PATTERN.test(entityId)) return feedbackError("INVALID_ENTITY_ID", "entityId 无效。", 400);
+  if (!ENTITY_ID_PATTERN.test(entityId)) return protectedError("INVALID_ENTITY_ID", "entityId 无效。", 400);
 
   if (request.method === "DELETE") {
     await removeEntityFeedback(env.DB, entityId);
-    return feedbackResponse(null, 204);
+    return protectedResponse(null, 204);
   }
   if (request.method !== "PUT") {
-    return feedbackError("METHOD_NOT_ALLOWED", "此接口仅支持 PUT 和 DELETE。", 405, { Allow: "PUT, DELETE" });
+    return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 PUT 和 DELETE。", 405, { Allow: "PUT, DELETE" });
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return feedbackError("INVALID_FEEDBACK", "请求正文必须是有效 JSON。", 400);
+    return protectedError("INVALID_FEEDBACK", "请求正文必须是有效 JSON。", 400);
   }
   if (!isRecord(body)) {
-    return feedbackError("INVALID_FEEDBACK", "反馈内容无效。", 400);
+    return protectedError("INVALID_FEEDBACK", "反馈内容无效。", 400);
   }
   const value = body.value;
   const briefDate = body.briefDate;
@@ -104,25 +105,81 @@ async function handleFeedbackRequest(request: Request, env: Pick<Env, "DB" | "WA
     typeof briefDate !== "string" ||
     !isValidUtcDate(briefDate)
   ) {
-    return feedbackError("INVALID_FEEDBACK", "反馈值或简报日期无效。", 400);
+    return protectedError("INVALID_FEEDBACK", "反馈值或简报日期无效。", 400);
   }
-  const saved = await setEntityFeedback(env.DB, entityId, value as FeedbackValue, briefDate, now.toISOString());
+  const saved = await setEntityFeedback(env.DB, entityId, value as FeedbackValue, briefDate, now.toISOString(), user.id);
   return saved
-    ? feedbackResponse({ entityId, value })
-    : feedbackError("FEEDBACK_TARGET_NOT_FOUND", "未找到该简报中的反馈对象。", 404);
+    ? protectedResponse({ entityId, value })
+    : protectedError("FEEDBACK_TARGET_NOT_FOUND", "未找到该简报中的反馈对象。", 404);
 }
 
-async function handleAdminAudioRequest(request: Request, env: Pick<Env, "DB" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY">, now: Date): Promise<Response> {
-  if (request.method !== "POST") return feedbackError("METHOD_NOT_ALLOWED", "此接口仅支持 POST。", 405, { Allow: "POST" });
-  if (!(await validFeedbackToken(request, env.WATCHTOWER_FEEDBACK_TOKEN))) return feedbackError("UNAUTHORIZED", "反馈凭证无效。", 401, { "WWW-Authenticate": "Bearer" });
-  const match = /^\/api\/admin\/brief-audio\/([^/]+)$/u.exec(new URL(request.url).pathname);
+async function handleAudioRetryRequest(request: Request, env: AuthRuntimeEnv & Pick<Env, "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY">, now: Date): Promise<Response> {
+  if (request.method !== "POST") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 POST。", 405, { Allow: "POST" });
+  const user = await requireAllowedUser(request, env);
+  if (user instanceof Response) return user;
+  const match = /^\/api\/briefs\/([^/]+)\/audio\/retry$/u.exec(new URL(request.url).pathname);
   const date = match?.[1] ?? "";
-  if (!isValidUtcDate(date)) return feedbackError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
-  if (!audioEnabled(env.BRIEF_AUDIO_ENABLED) || env.MIMO_API_KEY.length === 0) return feedbackError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
+  if (!isValidUtcDate(date)) return protectedError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+  if (!audioEnabled(env.BRIEF_AUDIO_ENABLED) || env.MIMO_API_KEY.length === 0) return protectedError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
   const status = await enqueueBriefAudio(env, date, now);
-  if (status === "not-found") return feedbackError("BRIEF_NOT_FOUND", "未找到已发布简报。", 404);
-  if (status === "disabled") return feedbackError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
-  return feedbackResponse({ briefDate: date, status });
+  if (status === "not-found") return protectedError("BRIEF_NOT_FOUND", "未找到已发布简报。", 404);
+  if (status === "disabled") return protectedError("BRIEF_AUDIO_UNAVAILABLE", "语音简报功能暂不可用。", 503);
+  return protectedResponse({ briefDate: date, status });
+}
+
+async function deleteAuth0User(env: AuthRuntimeEnv, userId: string): Promise<"deleted" | "not-found" | "failed"> {
+  try {
+    const tokenResponse = await fetch(`https://${env.AUTH0_TENANT_DOMAIN}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "client_credentials",
+        client_id: env.AUTH0_MANAGEMENT_CLIENT_ID,
+        client_secret: env.AUTH0_MANAGEMENT_CLIENT_SECRET,
+        audience: `https://${env.AUTH0_TENANT_DOMAIN}/api/v2/`,
+      }),
+    });
+    if (!tokenResponse.ok) return "failed";
+    const tokenBody: unknown = await tokenResponse.json();
+    if (!isRecord(tokenBody) || typeof tokenBody.access_token !== "string") return "failed";
+    const response = await fetch(`https://${env.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenBody.access_token}` },
+    });
+    if (response.status === 404) return "not-found";
+    return response.ok ? "deleted" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+async function handleAuthRequest(request: Request, env: AuthRuntimeEnv): Promise<Response> {
+  const path = new URL(request.url).pathname;
+  if (path === "/api/auth/config") {
+    if (request.method !== "GET" && request.method !== "HEAD") return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
+    return cachedJson(request, {
+      issuer: env.AUTH0_ISSUER,
+      audience: env.AUTH0_AUDIENCE,
+      connection: "apple",
+      clientIds: { web: env.AUTH0_WEB_CLIENT_ID, mobileDev: env.AUTH0_MOBILE_DEV_CLIENT_ID, mobileProd: env.AUTH0_MOBILE_PROD_CLIENT_ID },
+    }, request.method === "HEAD");
+  }
+  const user = await requireUser(request, env);
+  if (user instanceof Response) return user;
+  if (path === "/api/auth/me") {
+    if (request.method !== "GET") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 GET。", 405, { Allow: "GET" });
+    const allowed = await isFeedbackAllowed(env.DB, user.id);
+    return protectedResponse({ user, capabilities: { feedback: allowed, audioRetry: allowed } });
+  }
+  if (path === "/api/auth/account") {
+    if (request.method !== "DELETE") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 DELETE。", 405, { Allow: "DELETE" });
+    await removeAccountData(env.DB, user.id);
+    const result = await deleteAuth0User(env, user.id);
+    return result === "failed"
+      ? protectedError("ACCOUNT_DELETE_FAILED", "账号删除暂未完成，请稍后重试。", 502)
+      : protectedResponse(null, 204);
+  }
+  return protectedError("API_NOT_FOUND", "未找到该 API。", 404);
 }
 
 async function etagFor(body: string): Promise<string> {
@@ -171,7 +228,7 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER">,
+  env: Pick<Env, "DB" | "ASSETS" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -179,10 +236,11 @@ export async function handleRequest(
   if (url.pathname === "/api/mobile/v1/push-subscriptions") {
     return handlePushSubscriptionRequest(request, env, now);
   }
+  if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env);
   if (url.pathname === "/api/feedback" || url.pathname.startsWith("/api/feedback/")) {
     return handleFeedbackRequest(request, env, now);
   }
-  if (url.pathname.startsWith("/api/admin/brief-audio/")) return handleAdminAudioRequest(request, env, now);
+  if (/^\/api\/briefs\/[^/]+\/audio\/retry$/u.test(url.pathname)) return handleAudioRetryRequest(request, env, now);
 
   const audioMatch = /^\/api\/briefs\/([^/]+)\/audio$/u.exec(url.pathname);
   if (audioMatch?.[1]) {

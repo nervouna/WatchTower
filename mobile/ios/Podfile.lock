@@ -1,0 +1,40 @@
+PODS:
+  - Auth0 (2.23.0):
+    - JWTDecode (= 3.3.0)
+    - SimpleKeychain (= 1.3.0)
+  - auth0_flutter (2.4.0):
+    - Auth0 (= 2.23.0)
+    - Flutter
+    - FlutterMacOS
+    - JWTDecode (= 3.3.0)
+    - SimpleKeychain (= 1.3.0)
+  - Flutter (1.0.0)
+  - JWTDecode (3.3.0)
+  - SimpleKeychain (1.3.0)
+
+DEPENDENCIES:
+  - auth0_flutter (from `.symlinks/plugins/auth0_flutter/darwin`)
+  - Flutter (from `Flutter`)
+
+SPEC REPOS:
+  trunk:
+    - Auth0
+    - JWTDecode
+    - SimpleKeychain
+
+EXTERNAL SOURCES:
+  auth0_flutter:
+    :path: ".symlinks/plugins/auth0_flutter/darwin"
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  Auth0: dd46c309079f995e91dfd7af38e8fefd1a43bf4e
+  auth0_flutter: 92ec9d83332b980a5fd18776a6437d5734e70256
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  JWTDecode: 1ca6f765844457d0dd8690436860fecee788f631
+  SimpleKeychain: 9c0f3ca8458fed74e01db864d181c5cbe278603e
+
+PODFILE CHECKSUM: 1857a7cdb7dfafe45f2b0e9a9af44644190f7506
+
+COCOAPODS: 1.16.2

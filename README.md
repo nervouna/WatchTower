@@ -13,7 +13,7 @@ WatchTower 是一份面向开发者和产品从业者的中文科技情报日报
 - 区分完整简报与缺少部分来源的部分简报，并在生成延迟时提示读者。
 - 识别持续出现的项目，说明相对上一期发生了什么实质变化。
 - 提供按日期浏览的历史归档和带游标的公开 JSON API。
-- 提供仅限站主使用的反馈模式，可将实体标记为“持续关注”“不相关”或“没意思”，并影响后续候选筛选。
+- 公开阅读无需登录；白名单账号可通过 Sign in with Apple 进入反馈模式，将实体标记为“持续关注”“不相关”或“没意思”，并重试失败的语音生成。
 
 ## 工作方式
 
@@ -67,13 +67,10 @@ cp .env.example .env
 | --- | --- |
 | `TAVILY_API_KEY` | 搜索和提取四个平台的候选内容。 |
 | `DEEPSEEK_API_KEY` | 生成并修复结构化中文简报。 |
-| `WATCHTOWER_FEEDBACK_TOKEN` | 保护站主反馈 API 和前端反馈模式。 |
+| `AUTH0_MANAGEMENT_CLIENT_ID` | 账号删除专用 M2M 应用的 client ID。 |
+| `AUTH0_MANAGEMENT_CLIENT_SECRET` | 账号删除专用 M2M 应用的 secret。 |
 
-可以使用项目脚本生成高强度随机反馈凭证。脚本会将它写入本地 `.env`，并将文件权限设为仅当前用户可读写：
-
-```sh
-npm run feedback:setup
-```
+Auth0 issuer、audience、tenant domain 和三个公开 client ID 配置在 `wrangler.jsonc`。这些值不是秘密；Apple private key 只保存在 Apple/Auth0 配置中，不进入仓库或 Worker。
 
 ### 3. 初始化本地数据库
 
@@ -104,8 +101,14 @@ npm run dev
 | `npm run cf-typegen` | 根据 Wrangler 配置重新生成 Worker 环境类型。 |
 | `npm run db:migrate:local` | 将 D1 migrations 应用到本地数据库。 |
 | `npm run db:migrate:remote` | 将 D1 migrations 应用到远程数据库。 |
-| `npm run feedback:setup` | 在本地 `.env` 中生成或替换反馈凭证。 |
+| `npm run allowlist -- list [--remote\|--dev]` | 列出本地、生产远程或隔离 Dev D1 白名单。 |
+| `npm run allowlist -- add <user-id> [--note <text>] [--remote\|--dev]` | 添加或更新白名单记录；默认仅操作本地 D1。 |
+| `npm run allowlist -- remove <user-id> [--remote\|--dev]` | 移除白名单权限；默认仅操作本地 D1。 |
 | `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
+| `npm run deploy:dev` | 部署隔离的 `watchtower-daily-brief-dev` Worker 到 `dev.watchtower.damao.io`。 |
+| `npm run db:migrate:dev` | 显式应用 Dev D1 migrations；不会修改生产 D1。 |
+
+白名单命令使用 `--remote` 明确选择生产 D1，或使用 `--dev` 明确选择隔离的远程 Dev D1；两个参数不能同时使用。
 
 ## 移动客户端
 
@@ -145,30 +148,44 @@ iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`
 
 公开接口返回 JSON，允许跨域读取，并使用 `ETag`、五分钟公共缓存和 `stale-while-revalidate`。尚未到 `publishAt` 的简报不会被公开查询。
 
-### 站主反馈
+### 登录、反馈与账号
 
-反馈接口要求 `Authorization: Bearer <WATCHTOWER_FEEDBACK_TOKEN>`：
+Web 和移动端使用 Auth0 Universal Login，并只启用 Sign in with Apple。公开简报、归档、音频、离线缓存和推送始终匿名可用。受保护接口使用 Auth0 access token；Worker 严格验证 RS256 签名、issuer、audience、authorized party、有效期和 subject，再从 D1 白名单派生能力。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/feedback?entityId=...` | 读取最多 20 个实体的当前反馈；不传实体时可用于验证凭证。 |
 | `PUT` | `/api/feedback/:entityId` | 保存反馈，请求体为 `{"value":"follow","briefDate":"YYYY-MM-DD"}`。 |
 | `DELETE` | `/api/feedback/:entityId` | 清除实体反馈。 |
+| `GET` | `/api/auth/config` | 返回公开的 Auth0 客户端配置。 |
+| `GET` | `/api/auth/me` | 返回当前 user ID 和反馈、语音重试能力。 |
+| `DELETE` | `/api/auth/account` | 删除当前 token 对应的账号，不接受客户端指定其他 user ID。 |
+| `POST` | `/api/briefs/:date/audio/retry` | 白名单用户重试失败或未完成的语音生成。 |
 
 可用反馈值为 `follow`、`irrelevant` 和 `uninteresting`。反馈只能写入确实出现在所声明已发布简报中的实体。反馈响应使用 `Cache-Control: no-store`，也不会开放公共 CORS。
 
-浏览器中的反馈凭证只保存在当前标签页的 `sessionStorage`；退出反馈模式或关闭标签页会清除它。
+Web access token 只保存在 Auth0 SPA SDK 的内存缓存中；刷新页面时通过 Auth0 SSO cookie 静默恢复。Flutter 使用 Auth0 Credentials Manager 保存并更新凭证。合法但未加入白名单的账号仍可查看和复制自己的 user ID，但不能读取或写入反馈，也不能重试语音。
+
+账号删除会先撤销 D1 白名单并清除反馈审计中的 user ID，再通过仅有 `delete:users` 权限的 Auth0 M2M 应用删除当前 Auth0 用户。Auth0、Apple、DNS、远程 migration、部署和远程白名单变更均属于外部或生产操作，需要单独授权。
 
 ## 数据与部署
 
 - `migrations/` 是 D1 schema 的演进记录。不要修改已经应用的 migration；schema 变化应新增 migration。
 - `wrangler.jsonc` 是 Worker 入口、D1 绑定、静态资源、必需 secrets、计划任务、可观测性和生产域名的事实来源。
 - 当前生产环境关闭 `workers.dev`，仅通过 `watchtower.damao.io` 提供服务。
+- `env.dev` 部署为独立的 `watchtower-daily-brief-dev` Worker，通过 `dev.watchtower.damao.io` 提供 Web 测试环境。它使用独立 D1、R2 和队列，关闭 cron、语音生成和 queue consumers，并由 Cloudflare Access 的精确邮箱策略保护。Access 成员名单只在 Cloudflare Dashboard 管理，不写入仓库。
 - 生产部署前先应用新的远程 migration，再部署 Worker：
 
 ```sh
 npm run db:migrate:remote
 npm run deploy
+```
+
+Dev 部署使用显式环境命令，不读取生产 `.env`：
+
+```sh
+npm run db:migrate:dev
+npm run deploy:dev
 ```
 
 这两个命令会改变远程状态，只应在确认 Cloudflare 账户、数据库和目标环境无误后执行。部署后至少检查首页、归档页和公开 API：

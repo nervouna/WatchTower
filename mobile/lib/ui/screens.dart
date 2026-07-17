@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../app_model.dart';
+import '../auth/auth_controller.dart';
 import '../data/brief_repository.dart';
 import '../models.dart';
 import '../push/push_controller.dart';
@@ -254,6 +256,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final push = context.watch<PushController>();
+    final auth = context.watch<AuthController>();
     return ListView(
       padding: EdgeInsets.fromLTRB(
         _horizontalPadding(context, 16),
@@ -269,6 +272,8 @@ class SettingsScreen extends StatelessWidget {
           ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 16),
+        _AccountCard(auth: auth),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -358,6 +363,98 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.auth});
+  final AuthController auth;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '账号',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          if (auth.loading)
+            const Text('正在检查登录状态…')
+          else if (!auth.signedIn) ...[
+            Text(auth.error ?? '无需账号即可阅读。登录后可以查看反馈权限。'),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: auth.busy ? null : auth.login,
+              child: Text(auth.busy ? '正在登录…' : '使用 Apple 登录'),
+            ),
+          ] else ...[
+            Text(auth.feedbackAllowed ? '已进入反馈模式' : '当前账号未加入白名单'),
+            const SizedBox(height: 8),
+            SelectableText(
+              'user ID：${auth.userId}',
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: auth.userId!)),
+                  child: const Text('复制 user ID'),
+                ),
+                OutlinedButton(
+                  onPressed: auth.busy ? null : auth.logout,
+                  child: const Text('退出登录'),
+                ),
+                TextButton(
+                  onPressed: auth.busy
+                      ? null
+                      : () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('删除账号？'),
+                              content: const Text(
+                                '账号与白名单身份会被删除，此操作无法撤销。匿名阅读不受影响。',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('取消'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('确认删除'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) await auth.deleteAccount();
+                        },
+                  child: const Text('删除账号'),
+                ),
+              ],
+            ),
+          ],
+          if (auth.error != null && auth.signedIn) ...[
+            const SizedBox(height: 8),
+            Text(
+              auth.error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
 class PrivacyScreen extends StatelessWidget {
   const PrivacyScreen({super.key});
   @override
@@ -377,7 +474,7 @@ class PrivacyScreen extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       const Text(
-        'WatchTower 无需账号即可使用，不包含广告或跨应用追踪 SDK。你阅读过哪些简报、播放到哪里，只保存在设备本地。',
+        'WatchTower 无需账号即可使用，不包含广告或跨应用追踪 SDK。你阅读过哪些简报、播放到哪里，只保存在设备本地。只有在你主动使用 Apple 登录后，服务端才会保存 Auth0 user ID、白名单状态和共享反馈；账号可随时删除。',
         style: TextStyle(height: 1.7),
       ),
       const SizedBox(height: 16),

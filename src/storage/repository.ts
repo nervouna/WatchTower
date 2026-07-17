@@ -313,11 +313,12 @@ export async function setEntityFeedback(
   value: FeedbackValue,
   sourceBriefDate: string,
   updatedAt: string,
+  updatedByUserId: string,
 ): Promise<boolean> {
   const result = await db
     .prepare(
-      `INSERT INTO entity_feedback (entity_id, feedback, source_brief_date, created_at, updated_at)
-       SELECT item.entity_id, ?, ?, ?, ?
+      `INSERT INTO entity_feedback (entity_id, feedback, source_brief_date, created_at, updated_at, updated_by_user_id)
+       SELECT item.entity_id, ?, ?, ?, ?, ?
        FROM brief_items AS item
        JOIN briefs AS brief ON brief.brief_date = item.brief_date
        WHERE item.entity_id = ? AND item.brief_date = ? AND brief.publish_at <= ?
@@ -325,11 +326,23 @@ export async function setEntityFeedback(
        ON CONFLICT(entity_id) DO UPDATE SET
          feedback = excluded.feedback,
          source_brief_date = excluded.source_brief_date,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at,
+         updated_by_user_id = excluded.updated_by_user_id`,
     )
-    .bind(value, sourceBriefDate, updatedAt, updatedAt, entityId, sourceBriefDate, updatedAt)
+    .bind(value, sourceBriefDate, updatedAt, updatedAt, updatedByUserId, entityId, sourceBriefDate, updatedAt)
     .run();
   return result.meta.changes > 0;
+}
+
+export async function isFeedbackAllowed(db: D1Database, userId: string): Promise<boolean> {
+  return (await db.prepare("SELECT 1 AS allowed FROM feedback_allowlist WHERE user_id = ?").bind(userId).first()) !== null;
+}
+
+export async function removeAccountData(db: D1Database, userId: string): Promise<void> {
+  await db.batch([
+    db.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind(userId),
+    db.prepare("UPDATE entity_feedback SET updated_by_user_id = NULL WHERE updated_by_user_id = ?").bind(userId),
+  ]);
 }
 
 export async function removeEntityFeedback(db: D1Database, entityId: string): Promise<void> {

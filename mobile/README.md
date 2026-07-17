@@ -25,3 +25,18 @@ The single iOS `Runner` target exposes two shared schemes:
 - `prod`: `io.damao.watchtower`, `WatchTower`, and production APNs for TestFlight and App Store archives.
 
 Create a production archive with `flutter build ipa --flavor prod --release`. A local `Debug-prod` build still receives a sandbox entitlement and the push API intentionally rejects that app/environment combination. Android intentionally omits push notification integration in v1 while sharing reading, SQLite caching, and background audio.
+
+## Auth0 callbacks
+
+The app fetches the public Auth0 issuer, audience, and flavor-specific client ID from `/api/auth/config`. `auth0_flutter` 2.4.0 stores and refreshes credentials through the platform Credentials Manager; authentication initializes after `runApp` and must never block reading, offline cache, audio, or push.
+
+Register both HTTPS and custom-scheme callback/logout URLs for each iOS Native client:
+
+```text
+https://auth.watchtower.damao.io/ios/io.damao.watchtower.dev/callback
+io.damao.watchtower.dev://auth.watchtower.damao.io/ios/io.damao.watchtower.dev/callback
+https://auth.watchtower.damao.io/ios/io.damao.watchtower/callback
+io.damao.watchtower://auth.watchtower.damao.io/ios/io.damao.watchtower/callback
+```
+
+iOS uses `webcredentials:auth.watchtower.damao.io` for Universal Links and automatically falls back to the bundle-ID scheme on iOS 16 and 17.0–17.3. Android uses the production Native client and the HTTPS callback `https://auth.watchtower.damao.io/android/io.damao.watchtower/callback`; Auth0 App Links verification must include the current debug signing fingerprint, then the release fingerprint when a production Android key exists.

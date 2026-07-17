@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_controller.dart';
+import '../auth/auth_controller.dart';
 import '../models.dart';
 import '../theme.dart';
 
@@ -11,7 +14,7 @@ String _duration(double seconds) {
   return '${rounded ~/ 60} 分 ${(rounded % 60).toString().padLeft(2, '0')} 秒';
 }
 
-class BriefView extends StatelessWidget {
+class BriefView extends StatefulWidget {
   const BriefView({
     required this.brief,
     required this.offline,
@@ -23,7 +26,48 @@ class BriefView extends StatelessWidget {
   final DateTime? fetchedAt;
 
   @override
+  State<BriefView> createState() => _BriefViewState();
+}
+
+class _BriefViewState extends State<BriefView> {
+  String? _feedbackUserId;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadFeedbackIfAvailable();
+  }
+
+  @override
+  void didUpdateWidget(covariant BriefView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final refreshed =
+        oldWidget.fetchedAt != widget.fetchedAt ||
+        oldWidget.brief.date != widget.brief.date ||
+        (oldWidget.offline && !widget.offline);
+    if (refreshed) _loadFeedbackIfAvailable(force: true);
+  }
+
+  void _loadFeedbackIfAvailable({bool force = false}) {
+    final auth = context.read<AuthController?>();
+    if (!widget.offline &&
+        auth?.feedbackAllowed == true &&
+        (force || auth?.userId != _feedbackUserId)) {
+      _feedbackUserId = auth?.userId;
+      unawaited(
+        auth!.loadFeedback(widget.brief.items.map((item) => item.entityId)),
+      );
+    } else if (auth?.feedbackAllowed != true) {
+      _feedbackUserId = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final brief = widget.brief;
+    final offline = widget.offline;
+    final fetchedAt = widget.fetchedAt;
+    final auth = context.watch<AuthController?>();
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
     final horizontal = width > 792 ? (width - 760) / 2 : 16.0;
@@ -36,7 +80,7 @@ class BriefView extends StatelessWidget {
               icon: Icons.cloud_off_outlined,
               text: fetchedAt == null
                   ? '当前显示离线内容。'
-                  : '当前显示离线内容，缓存于 ${_time(fetchedAt!)}。',
+                  : '当前显示离线内容，缓存于 ${_time(fetchedAt)}。',
             ),
           if (brief.status == 'partial')
             _Notice(
@@ -85,7 +129,7 @@ class BriefView extends StatelessWidget {
                   ),
                   if (brief.audio != null) ...[
                     const SizedBox(height: 20),
-                    _AudioCard(brief: brief),
+                    _AudioCard(brief: brief, offline: offline, auth: auth),
                   ],
                   const SizedBox(height: 20),
                   _Coverage(counts: brief.sourceCounts),
@@ -120,7 +164,12 @@ class BriefView extends StatelessWidget {
             const _EmptyBrief()
           else
             for (final item in brief.items) ...[
-              _BriefItemCard(item: item),
+              _BriefItemCard(
+                item: item,
+                briefDate: brief.date,
+                offline: offline,
+                auth: auth,
+              ),
               const SizedBox(height: 12),
             ],
         ],
@@ -207,11 +256,26 @@ class _Coverage extends StatelessWidget {
   );
 }
 
-class _AudioCard extends StatelessWidget {
-  const _AudioCard({required this.brief});
+class _AudioCard extends StatefulWidget {
+  const _AudioCard({
+    required this.brief,
+    required this.offline,
+    required this.auth,
+  });
   final Brief brief;
+  final bool offline;
+  final AuthController? auth;
+  @override
+  State<_AudioCard> createState() => _AudioCardState();
+}
+
+class _AudioCardState extends State<_AudioCard> {
+  bool retrying = false;
+  bool queued = false;
+  String? retryError;
   @override
   Widget build(BuildContext context) {
+    final brief = widget.brief;
     final audioInfo = brief.audio!;
     final controller = context.watch<AudioController>();
     if (audioInfo.status != 'ready') {
@@ -221,10 +285,50 @@ class _AudioCard extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Text(
-          audioInfo.status == 'pending'
-              ? '语音版正在生成，文字简报可以正常阅读。'
-              : '语音版暂时不可用，文字简报不受影响。',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              queued || audioInfo.status == 'pending'
+                  ? '语音版正在生成，文字简报可以正常阅读。'
+                  : '语音版暂时不可用，文字简报不受影响。',
+            ),
+            if (audioInfo.status == 'failed' &&
+                widget.auth?.audioRetryAllowed == true) ...[
+              const SizedBox(height: 10),
+              FilledButton.tonal(
+                onPressed: widget.offline || retrying || queued
+                    ? null
+                    : () async {
+                        setState(() => retrying = true);
+                        try {
+                          await widget.auth!.retryAudio(brief.date);
+                          if (mounted) setState(() => queued = true);
+                        } catch (_) {
+                          if (mounted) setState(() => retryError = '提交失败，请重试。');
+                        } finally {
+                          if (mounted) setState(() => retrying = false);
+                        }
+                      },
+                child: Text(
+                  widget.offline
+                      ? '连接网络后重试'
+                      : retrying
+                      ? '正在提交…'
+                      : queued
+                      ? '语音正在重新生成'
+                      : '重新生成语音',
+                ),
+              ),
+              if (retryError != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  retryError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
+          ],
         ),
       );
     }
@@ -295,8 +399,16 @@ class _AudioCard extends StatelessWidget {
 }
 
 class _BriefItemCard extends StatelessWidget {
-  const _BriefItemCard({required this.item});
+  const _BriefItemCard({
+    required this.item,
+    required this.briefDate,
+    required this.offline,
+    required this.auth,
+  });
   final BriefItem item;
+  final String briefDate;
+  final bool offline;
+  final AuthController? auth;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -373,6 +485,15 @@ class _BriefItemCard extends StatelessWidget {
               runSpacing: 8,
               children: [for (final tag in item.tags) _Meta(text: tag)],
             ),
+            if (auth?.feedbackAllowed == true) ...[
+              const SizedBox(height: 12),
+              _FeedbackControls(
+                item: item,
+                briefDate: briefDate,
+                offline: offline,
+                auth: auth!,
+              ),
+            ],
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
@@ -399,6 +520,71 @@ class _BriefItemCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FeedbackControls extends StatelessWidget {
+  const _FeedbackControls({
+    required this.item,
+    required this.briefDate,
+    required this.offline,
+    required this.auth,
+  });
+  final BriefItem item;
+  final String briefDate;
+  final bool offline;
+  final AuthController auth;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = auth.feedback[item.entityId];
+    final saving = auth.savingFeedback.contains(item.entityId);
+    final error = auth.feedbackErrors[item.entityId];
+    const choices = {
+      'follow': '持续关注',
+      'irrelevant': '不相关',
+      'uninteresting': '没意思',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('指导后续筛选', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final choice in choices.entries)
+              FilterChip(
+                label: Text(choice.value),
+                selected: current == choice.key,
+                onSelected: offline || saving
+                    ? null
+                    : (_) => auth.setFeedback(
+                        item.entityId,
+                        briefDate,
+                        current == choice.key ? null : choice.key,
+                      ),
+              ),
+          ],
+        ),
+        if (offline)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text('连接网络后可提交反馈。'),
+          ),
+        if (saving)
+          const Padding(padding: EdgeInsets.only(top: 6), child: Text('正在保存…')),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              error,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+      ],
     );
   }
 }

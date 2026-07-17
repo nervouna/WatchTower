@@ -2,10 +2,65 @@ openapi: 3.1.0
 info:
   title: WatchTower Public API
   version: 1.0.0
-  description: Stable read-only contract consumed by the WatchTower web and mobile clients.
+  description: Stable public and authenticated contract consumed by the WatchTower web and mobile clients.
 servers:
   - url: https://watchtower.damao.io
 paths:
+  /api/auth/config:
+    get:
+      operationId: getAuthConfig
+      responses:
+        '200': { description: Public Auth0 issuer, audience, Apple connection, and interactive client IDs }
+  /api/auth/me:
+    get:
+      operationId: getCurrentUser
+      security: [{ auth0: [] }]
+      responses:
+        '200':
+          description: Authenticated identity and allowlist-derived capabilities
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuthMe' } } }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+  /api/auth/account:
+    delete:
+      operationId: deleteCurrentAccount
+      security: [{ auth0: [] }]
+      responses:
+        '204': { description: Current Auth0 user and local identity data deleted }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '502': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+  /api/feedback:
+    get:
+      operationId: getFeedback
+      security: [{ auth0: [] }]
+      parameters:
+        - { name: entityId, in: query, schema: { type: array, maxItems: 20, items: { type: string } } }
+      responses:
+        '200': { description: Shared feedback values for requested entities }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+  /api/feedback/{entityId}:
+    parameters:
+      - { name: entityId, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: setFeedback
+      security: [{ auth0: [] }]
+      responses:
+        '200': { description: Shared feedback replaced and modifier identity recorded }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+    delete:
+      operationId: deleteFeedback
+      security: [{ auth0: [] }]
+      responses:
+        '204': { description: Shared feedback cleared }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
   /api/briefs/latest:
     get:
       operationId: getLatestBrief
@@ -49,6 +104,17 @@ paths:
         '200': { description: Range-capable WAV audio stream }
         '206': { description: Partial WAV audio stream }
         '404': { $ref: '#/components/responses/ApiError' }
+  /api/briefs/{date}/audio/retry:
+    parameters:
+      - $ref: '#/components/parameters/Date'
+    post:
+      operationId: retryBriefAudio
+      security: [{ auth0: [] }]
+      responses:
+        '200': { description: Audio job queued, already pending, or already ready }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
   /api/mobile/v1/push-subscriptions:
     put:
       operationId: upsertPushSubscription
@@ -80,6 +146,14 @@ paths:
         '415': { $ref: '#/components/responses/MobilePushError' }
         '429': { $ref: '#/components/responses/MobilePushRateLimited' }
 components:
+  securitySchemes:
+    auth0:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.watchtower.damao.io/authorize
+          tokenUrl: https://auth.watchtower.damao.io/oauth/token
+          scopes: {}
   parameters:
     Date:
       name: date
@@ -89,6 +163,12 @@ components:
   responses:
     ApiError:
       description: Stable error envelope
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    ProtectedError:
+      description: Stable authenticated API error
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
       content:
         application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
     MobilePushNoContent:
@@ -109,6 +189,20 @@ components:
       content:
         application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
   schemas:
+    AuthMe:
+      type: object
+      required: [user, capabilities]
+      properties:
+        user:
+          type: object
+          required: [id]
+          properties: { id: { type: string } }
+        capabilities:
+          type: object
+          required: [feedback, audioRetry]
+          properties:
+            feedback: { type: boolean }
+            audioRetry: { type: boolean }
     SourceKind: { type: string, enum: [hacker-news, product-hunt, github, kickstarter] }
     BriefStatus: { type: string, enum: [complete, partial] }
     SourceLink:

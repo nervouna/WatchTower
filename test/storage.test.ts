@@ -133,9 +133,10 @@ describe("D1 repository", () => {
     const brief = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
     const entityId = brief!.items[0]!.entityId;
 
-    expect(await setEntityFeedback(env.DB, entityId, "follow", "2026-07-16", "2026-07-16T01:00:00.000Z")).toBe(true);
+    expect(await setEntityFeedback(env.DB, entityId, "follow", "2026-07-16", "2026-07-16T01:00:00.000Z", "auth0|user-a")).toBe(true);
     expect(await getEntityFeedback(env.DB, [entityId])).toEqual({ [entityId]: "follow" });
-    expect(await setEntityFeedback(env.DB, entityId, "uninteresting", "2026-07-16", "2026-07-16T02:00:00.000Z")).toBe(true);
+    expect(await setEntityFeedback(env.DB, entityId, "uninteresting", "2026-07-16", "2026-07-16T02:00:00.000Z", "auth0|user-b")).toBe(true);
+    expect(await env.DB.prepare("SELECT updated_by_user_id FROM entity_feedback WHERE entity_id = ?").bind(entityId).first()).toEqual({ updated_by_user_id: "auth0|user-b" });
     await replaceBrief(env.DB, briefDraft("2026-07-16", "更新后的热点项目"));
     expect(await getEntityFeedback(env.DB, [entityId])).toEqual({ [entityId]: "uninteresting" });
 
@@ -146,7 +147,7 @@ describe("D1 repository", () => {
   it("rejects feedback for an entity that is not present in the claimed published brief", async () => {
     await replaceBrief(env.DB, briefDraft("2026-07-16"));
     const brief = await getBrief(env.DB, "2026-07-16", "2026-07-16T00:01:00.000Z");
-    expect(await setEntityFeedback(env.DB, brief!.items[0]!.entityId, "follow", "2026-07-15", "2026-07-16T01:00:00.000Z")).toBe(false);
+    expect(await setEntityFeedback(env.DB, brief!.items[0]!.entityId, "follow", "2026-07-15", "2026-07-16T01:00:00.000Z", "auth0|user-a")).toBe(false);
   });
 
   it("rolls back an invalid replacement and preserves the old brief", async () => {
