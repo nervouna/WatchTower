@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain WatchTower Worker"
+  short_description: "Preserve WatchTower Worker contracts"
+  default_prompt: "Use $maintain-watchtower-worker to make this WatchTower backend change without breaking runtime, API, data, or production contracts."
