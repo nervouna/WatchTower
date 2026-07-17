@@ -47,6 +47,7 @@ void main() {
     expect(find.textContaining('离线内容'), findsOneWidget);
     expect(find.textContaining('本期为部分简报'), findsOneWidget);
     expect(find.text('今天值得关注的技术信号'), findsOneWidget);
+    expect(find.text('2026-07-17 · UTC'), findsNothing);
     expect(find.text('本期暂无可发布热点'), findsOneWidget);
   });
 
