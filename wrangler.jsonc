@@ -67,7 +67,8 @@
     }
   ],
   "vars": {
-    "BRIEF_AUDIO_ENABLED": "true"
+    "BRIEF_AUDIO_ENABLED": "true",
+    "BRIEF_COVER_ENABLED": "true"
   },
   "secrets": {
     "required": [
@@ -75,6 +76,7 @@
       "DEEPSEEK_API_KEY",
       "WATCHTOWER_FEEDBACK_TOKEN",
       "MIMO_API_KEY",
+      "FAL_API_KEY",
       "APNS_TEAM_ID",
       "APNS_SANDBOX_KEY_ID",
       "APNS_SANDBOX_PRIVATE_KEY",

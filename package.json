@@ -15,6 +15,7 @@
     "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --remote",
     "feedback:setup": "node scripts/setup-feedback-token.mjs",
     "audio:enqueue": "node --env-file=.env scripts/enqueue-audio.mjs",
+    "cover:enqueue": "node --env-file=.env scripts/enqueue-cover.mjs",
     "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --secrets-file .env"
   },
   "devDependencies": {

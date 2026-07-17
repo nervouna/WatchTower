@@ -2,6 +2,7 @@ import { resolveScheduledRun } from "./domain/schedule";
 import { handleRequest } from "./http/router";
 import { runPipelineStage } from "./ingestion/pipeline";
 import { enqueueBriefAudio, processBriefAudioJob, type BriefAudioJob } from "./audio/jobs";
+import { enqueueBriefCover, processBriefCoverJob, type BriefCoverJob } from "./cover/jobs";
 import {
   enqueueBriefPush,
   abandonBriefPushJob,
@@ -27,6 +28,12 @@ export default {
           console.log(JSON.stringify({ event: "brief_audio_enqueue", briefDate: invocation.targetDate, status: audioStatus }));
         } catch {
           console.error(JSON.stringify({ event: "brief_audio_enqueue_failed", briefDate: invocation.targetDate, status: "failed", errorCode: "AUDIO_QUEUE_SEND_FAILED" }));
+        }
+        try {
+          const coverStatus = await enqueueBriefCover(env, invocation.targetDate);
+          console.log(JSON.stringify({ event: "brief_cover_enqueue", briefDate: invocation.targetDate, status: coverStatus }));
+        } catch {
+          console.error(JSON.stringify({ event: "brief_cover_enqueue_failed", briefDate: invocation.targetDate, status: "failed", errorCode: "COVER_QUEUE_SEND_FAILED" }));
         }
         try {
           const pushStatus = await enqueueBriefPush(env, invocation.targetDate);
@@ -69,7 +76,9 @@ export default {
           if (job.kind === "brief-push-fanout") await processPushFanout(env, job, new Date(), message.attempts > 1);
           else await processPushDelivery(env, job, new Date(), message.attempts > 1);
         } else {
-          await processBriefAudioJob(env, message.body as BriefAudioJob, new Date(), message.attempts > 1);
+          const job = message.body as BriefAudioJob | BriefCoverJob;
+          if (job.kind === "brief-cover") await processBriefCoverJob(env, job, new Date(), message.attempts > 1);
+          else await processBriefAudioJob(env, job, new Date(), message.attempts > 1);
         }
         message.ack();
       } catch {
@@ -80,4 +89,4 @@ export default {
       }
     }
   },
-} satisfies ExportedHandler<Env, BriefAudioJob | BriefPushJob>;
+} satisfies ExportedHandler<Env, BriefAudioJob | BriefCoverJob | BriefPushJob>;

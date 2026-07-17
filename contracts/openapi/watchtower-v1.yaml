@@ -49,6 +49,15 @@ paths:
         '200': { description: Range-capable WAV audio stream }
         '206': { description: Partial WAV audio stream }
         '404': { $ref: '#/components/responses/ApiError' }
+  /api/briefs/{date}/cover:
+    parameters:
+      - $ref: '#/components/parameters/Date'
+    get:
+      operationId: getBriefCover
+      responses:
+        '200': { description: Generated podcast cover image }
+        '304': { description: Cached cover is current }
+        '404': { $ref: '#/components/responses/ApiError' }
   /api/mobile/v1/push-subscriptions:
     put:
       operationId: upsertPushSubscription
@@ -131,6 +140,16 @@ components:
         tags: { type: array, items: { type: string } }
         continuity: { type: object, required: [kind], additionalProperties: true }
         sources: { type: array, items: { $ref: '#/components/schemas/SourceLink' } }
+    BriefCover:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [pending, failed, ready] }
+        url: { type: string }
+        generatedAt: { type: string, format: date-time }
+        provider: { type: string, const: fal-ai }
+        model: { type: string, const: fal-ai/recraft/v3/text-to-image }
+        synthetic: { type: boolean, const: true }
     BriefAudio:
       type: object
       required: [status]
@@ -142,6 +161,7 @@ components:
         transcript: { type: string }
         provider: { type: string }
         synthetic: { type: boolean }
+        cover: { anyOf: [{ $ref: '#/components/schemas/BriefCover' }, { type: 'null' }] }
     Brief:
       type: object
       required: [date, status, publishedAt, generatedAt, headline, intro, missingSources, sourceCounts, audio, items]

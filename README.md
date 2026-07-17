@@ -13,6 +13,7 @@ WatchTower 是一份面向开发者和产品从业者的中文科技情报日报
 - 区分完整简报与缺少部分来源的部分简报，并在生成延迟时提示读者。
 - 识别持续出现的项目，说明相对上一期发生了什么实质变化。
 - 提供按日期浏览的历史归档和带游标的公开 JSON API。
+- 为每日语音简报异步生成 AI 播客封面，并在网页、App 和系统媒体播放器中展示；封面失败不影响文字或音频。
 - 提供仅限站主使用的反馈模式，可将实体标记为“持续关注”“不相关”或“没意思”，并影响后续候选筛选。
 
 ## 工作方式
@@ -37,6 +38,7 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 - TypeScript（strict mode）
 - Tavily Search 与 Extract API
 - DeepSeek Chat Completions API
+- 小米 MiMo TTS 与 fal.ai Recraft V3
 - 原生 HTML、CSS 和 JavaScript 前端
 - Flutter iOS/Android 阅读客户端（`mobile/`）
 - Vitest 与 Cloudflare Workers 测试池
@@ -68,6 +70,8 @@ cp .env.example .env
 | `TAVILY_API_KEY` | 搜索和提取四个平台的候选内容。 |
 | `DEEPSEEK_API_KEY` | 生成并修复结构化中文简报。 |
 | `WATCHTOWER_FEEDBACK_TOKEN` | 保护站主反馈 API 和前端反馈模式。 |
+| `MIMO_API_KEY` | 合成每日语音简报。 |
+| `FAL_API_KEY` | 通过 fal.ai Recraft V3 生成每日播客封面。 |
 
 可以使用项目脚本生成高强度随机反馈凭证。脚本会将它写入本地 `.env`，并将文件权限设为仅当前用户可读写：
 
@@ -105,6 +109,8 @@ npm run dev
 | `npm run db:migrate:local` | 将 D1 migrations 应用到本地数据库。 |
 | `npm run db:migrate:remote` | 将 D1 migrations 应用到远程数据库。 |
 | `npm run feedback:setup` | 在本地 `.env` 中生成或替换反馈凭证。 |
+| `npm run audio:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排语音任务。 |
+| `npm run cover:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排播客封面任务。 |
 | `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
 
 ## 移动客户端
@@ -142,6 +148,8 @@ iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`
 | `GET`, `HEAD` | `/api/briefs/latest` | 获取当前已发布的最新简报。 |
 | `GET`, `HEAD` | `/api/briefs/:date` | 获取指定日期的已发布简报。 |
 | `GET`, `HEAD` | `/api/briefs?limit=20&cursor=...` | 按日期倒序获取简报摘要；`limit` 范围为 1–100。 |
+| `GET`, `HEAD` | `/api/briefs/:date/audio` | 获取支持 Range 的已生成 WAV 语音。 |
+| `GET`, `HEAD` | `/api/briefs/:date/cover` | 获取已生成的播客封面图片。 |
 
 公开接口返回 JSON，允许跨域读取，并使用 `ETag`、五分钟公共缓存和 `stale-while-revalidate`。尚未到 `publishAt` 的简报不会被公开查询。
 

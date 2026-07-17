@@ -9,6 +9,16 @@ function between(value: string, start: string, end: string): string {
 }
 
 describe("checked-in OpenAPI contract", () => {
+  it("documents the optional generated podcast cover and image endpoint", () => {
+    expect(contract).toContain("/api/briefs/{date}/cover:");
+    const schema = between(contract, "    BriefCover:\n", "    BriefAudio:\n");
+    expect(schema).toContain("pending");
+    expect(schema).toContain("failed");
+    expect(schema).toContain("ready");
+    expect(schema).toContain("fal-ai/recraft/v3/text-to-image");
+    expect(between(contract, "    BriefAudio:\n", "    Brief:\n")).toContain("cover:");
+  });
+
   it("documents the runtime push subscription app and environment contract", () => {
     const schema = between(contract, "    PushSubscription:\n", "    ApiError:\n");
     expect(schema).toMatch(/required: \[[^\]]*appId[^\]]*\]/u);

@@ -1,6 +1,7 @@
 import { FEEDBACK_VALUES, type FeedbackValue } from "../domain/types";
 import {
   getBriefAudio,
+  getBriefCover,
   getBrief,
   getEntityFeedback,
   getLatestBrief,
@@ -9,6 +10,7 @@ import {
   setEntityFeedback,
 } from "../storage/repository";
 import { enqueueBriefAudio } from "../audio/jobs";
+import { enqueueBriefCover } from "../cover/jobs";
 import { handlePushSubscriptionRequest } from "../push/subscriptions";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
@@ -125,6 +127,19 @@ async function handleAdminAudioRequest(request: Request, env: Pick<Env, "DB" | "
   return feedbackResponse({ briefDate: date, status });
 }
 
+async function handleAdminCoverRequest(request: Request, env: Pick<Env, "DB" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO_QUEUE" | "BRIEF_COVER_ENABLED" | "FAL_API_KEY">, now: Date): Promise<Response> {
+  if (request.method !== "POST") return feedbackError("METHOD_NOT_ALLOWED", "此接口仅支持 POST。", 405, { Allow: "POST" });
+  if (!(await validFeedbackToken(request, env.WATCHTOWER_FEEDBACK_TOKEN))) return feedbackError("UNAUTHORIZED", "反馈凭证无效。", 401, { "WWW-Authenticate": "Bearer" });
+  const match = /^\/api\/admin\/brief-cover\/([^/]+)$/u.exec(new URL(request.url).pathname);
+  const date = match?.[1] ?? "";
+  if (!isValidUtcDate(date)) return feedbackError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+  if (!audioEnabled(env.BRIEF_COVER_ENABLED) || env.FAL_API_KEY.length === 0) return feedbackError("BRIEF_COVER_UNAVAILABLE", "播客封面功能暂不可用。", 503);
+  const status = await enqueueBriefCover(env, date, now);
+  if (status === "not-found") return feedbackError("BRIEF_NOT_FOUND", "未找到已发布简报。", 404);
+  if (status === "disabled") return feedbackError("BRIEF_COVER_UNAVAILABLE", "播客封面功能暂不可用。", 503);
+  return feedbackResponse({ briefDate: date, status });
+}
+
 async function etagFor(body: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -171,7 +186,7 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER">,
+  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "BRIEF_COVER_ENABLED" | "MIMO_API_KEY" | "FAL_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -183,6 +198,31 @@ export async function handleRequest(
     return handleFeedbackRequest(request, env, now);
   }
   if (url.pathname.startsWith("/api/admin/brief-audio/")) return handleAdminAudioRequest(request, env, now);
+  if (url.pathname.startsWith("/api/admin/brief-cover/")) return handleAdminCoverRequest(request, env, now);
+
+  const coverMatch = /^\/api\/briefs\/([^/]+)\/cover$/u.exec(url.pathname);
+  if (coverMatch?.[1]) {
+    if (request.method !== "GET" && request.method !== "HEAD") return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
+    const date = coverMatch[1];
+    if (!isValidUtcDate(date)) return apiError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+    const brief = await getBrief(env.DB, date, now.toISOString());
+    const cover = brief ? await getBriefCover(env.DB, date) : null;
+    if (!brief || cover?.status !== "ready" || !cover.object_key) return apiError("BRIEF_COVER_NOT_FOUND", "未找到播客封面。", 404);
+    const object = await env.BRIEF_AUDIO.head(cover.object_key);
+    if (!object) return apiError("BRIEF_COVER_NOT_FOUND", "未找到播客封面。", 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("ETag", object.httpEtag);
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Cache-Control", "public, max-age=3600");
+    headers.set("Content-Length", String(object.size));
+    headers.set("X-Content-Type-Options", "nosniff");
+    if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+    if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+    const body = await env.BRIEF_AUDIO.get(cover.object_key);
+    if (!body) return apiError("BRIEF_COVER_NOT_FOUND", "未找到播客封面。", 404);
+    return new Response(body.body, { status: 200, headers });
+  }
 
   const audioMatch = /^\/api\/briefs\/([^/]+)\/audio$/u.exec(url.pathname);
   if (audioMatch?.[1]) {

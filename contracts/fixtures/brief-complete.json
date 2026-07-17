@@ -14,7 +14,15 @@
     "generatedAt": "2026-07-17T00:05:00.000Z",
     "transcript": "这是今天的 WatchTower 简报。",
     "provider": "xiaomi-mimo",
-    "synthetic": true
+    "synthetic": true,
+    "cover": {
+      "status": "ready",
+      "url": "/api/briefs/2026-07-17/cover",
+      "generatedAt": "2026-07-17T00:06:00.000Z",
+      "provider": "fal-ai",
+      "model": "fal-ai/recraft/v3/text-to-image",
+      "synthetic": true
+    }
   },
   "items": [
     {

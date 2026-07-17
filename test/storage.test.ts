@@ -9,10 +9,16 @@ import {
   getEntityFeedback,
   removeEntityFeedback,
   getBriefAudio,
+  getBriefCover,
   queueBriefAudio,
+  queueBriefCover,
   claimBriefAudio,
+  claimBriefCover,
   saveBriefAudioScript,
   readyBriefAudio,
+  readyBriefCover,
+  failBriefCover,
+  saveBriefCoverRequest,
   replaceBrief,
   setEntityFeedback,
   upsertCandidates,
@@ -72,7 +78,7 @@ function briefDraft(date: string, title = "首个热点项目"): BriefDraft {
 
 describe("D1 repository", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
+    await env.DB.exec("DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
   });
 
   it("creates all required tables through migrations", async () => {
@@ -80,7 +86,7 @@ describe("D1 repository", () => {
     const names = result.results.map((row) => row.name);
     expect(names).toEqual(expect.arrayContaining([
       "ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources",
-      "entity_feedback", "brief_audio", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
+      "entity_feedback", "brief_audio", "brief_covers", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
     ]));
     const pushColumns = await env.DB.prepare("PRAGMA table_info(push_subscriptions)").all<{ name: string }>();
     expect(pushColumns.results.map((column) => column.name)).toContain("app_id");
@@ -100,6 +106,44 @@ describe("D1 repository", () => {
     expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:06:00.000Z")).toBe("already-ready");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({ status: "ready", durationSeconds: 180, transcript: "开场\n\n正文\n\n结尾" });
     expect((await getBriefAudio(env.DB, "2026-07-16"))?.object_key).toBe("briefs/a.wav");
+  });
+
+  it("hydrates cover states and resumes one fal request idempotently", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:00:00.000Z")).toBe("queued");
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
+    expect((await claimBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:02:00.000Z"))?.attempt_count).toBe(1);
+    await saveBriefCoverRequest(env.DB, "2026-07-16", "cover-a", {
+      requestId: "fal-request",
+      statusUrl: "https://queue.fal.run/status",
+      responseUrl: "https://queue.fal.run/response",
+    }, "2026-07-16T01:03:00.000Z");
+    expect((await getBriefCover(env.DB, "2026-07-16"))?.fal_request_id).toBe("fal-request");
+    await readyBriefCover(env.DB, "2026-07-16", "cover-a", "briefs/cover.image", "2026-07-16T01:04:00.000Z");
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:05:00.000Z")).toBe("already-ready");
+    expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toBeNull();
+
+    await queueBriefAudio(env.DB, "2026-07-16", "audio-a", "2026-07-16T01:06:00.000Z");
+    expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio?.cover).toMatchObject({
+      status: "ready",
+      url: "/api/briefs/2026-07-16/cover",
+      provider: "fal-ai",
+      synthetic: true,
+    });
+  });
+
+  it("keeps ready audio available when cover generation fails", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    await queueBriefAudio(env.DB, "2026-07-16", "audio", "2026-07-16T01:00:00.000Z");
+    await saveBriefAudioScript(env.DB, "2026-07-16", "audio", JSON.stringify({ opening_zh: "开场", items: [], closing_zh: "结尾" }), "2026-07-16T01:01:00.000Z");
+    await readyBriefAudio(env.DB, "2026-07-16", "audio", "briefs/audio.wav", 180, "2026-07-16T01:02:00.000Z");
+    await queueBriefCover(env.DB, "2026-07-16", "cover", "2026-07-16T01:03:00.000Z");
+    await failBriefCover(env.DB, "2026-07-16", "cover", "FAL_GENERATION_FAILED", "2026-07-16T01:04:00.000Z");
+    expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({
+      status: "ready",
+      durationSeconds: 180,
+      cover: { status: "failed" },
+    });
   });
 
   it("skips a successfully completed idempotent stage", async () => {

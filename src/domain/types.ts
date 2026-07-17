@@ -83,9 +83,21 @@ export interface NarrationScript {
   closing_zh: string;
 }
 
-export type BriefAudio =
+export type BriefCover =
   | { status: "pending" }
   | { status: "failed" }
+  | {
+      status: "ready";
+      url: string;
+      generatedAt: string;
+      provider: "fal-ai";
+      model: "fal-ai/recraft/v3/text-to-image";
+      synthetic: true;
+    };
+
+export type BriefAudio =
+  | { status: "pending"; cover?: BriefCover | null }
+  | { status: "failed"; cover?: BriefCover | null }
   | {
       status: "ready";
       url: string;
@@ -94,6 +106,7 @@ export type BriefAudio =
       transcript: string;
       provider: "xiaomi-mimo";
       synthetic: true;
+      cover?: BriefCover | null;
     };
 
 export interface BriefSummary {

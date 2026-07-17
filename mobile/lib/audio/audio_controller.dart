@@ -10,6 +10,20 @@ import '../models.dart';
 
 enum AudioAvailability { initializing, ready, unavailable }
 
+MediaItem briefMediaItem(Brief brief, Uri audioUri) => MediaItem(
+  id: brief.date,
+  title: brief.headline,
+  album: 'WatchTower 每日简报',
+  duration: brief.audio?.durationSeconds == null
+      ? null
+      : Duration(milliseconds: (brief.audio!.durationSeconds! * 1000).round()),
+  artUri:
+      brief.audio?.cover?.status == 'ready' && brief.audio?.cover?.url != null
+      ? audioUri.resolve(brief.audio!.cover!.url!)
+      : null,
+  extras: {'briefDate': brief.date},
+);
+
 typedef AudioHandlerInitializer = Future<WatchTowerAudioHandler> Function();
 
 Future<WatchTowerAudioHandler> _initializeAudioHandler() async {
@@ -46,17 +60,7 @@ class WatchTowerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setBrief(Brief brief, Uri uri) async {
     final current = mediaItem.value;
     if (current?.id != brief.date) {
-      final item = MediaItem(
-        id: brief.date,
-        title: brief.headline,
-        album: 'WatchTower 每日简报',
-        duration: brief.audio?.durationSeconds == null
-            ? null
-            : Duration(
-                milliseconds: (brief.audio!.durationSeconds! * 1000).round(),
-              ),
-        extras: {'briefDate': brief.date},
-      );
+      final item = briefMediaItem(brief, uri);
       mediaItem.add(item);
       await _player.setUrl(uri.toString());
     }
