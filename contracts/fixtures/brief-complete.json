@@ -7,6 +7,7 @@
   "intro": "今天值得关注的信号集中在开发工具、AI 基础设施与小型硬件团队。",
   "missingSources": [],
   "sourceCounts": { "hacker-news": 1, "product-hunt": 1, "github": 1, "kickstarter": 1 },
+  "features": { "exploration": true },
   "audio": {
     "status": "ready",
     "url": "/api/briefs/2026-07-17/audio",

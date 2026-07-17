@@ -24,6 +24,16 @@ import {
   upsertCandidates,
   type BriefDraft,
 } from "../src/storage/repository";
+import {
+  claimExplorationTrigger,
+  claimExplorationWork,
+  getExplorationRow,
+  releaseExplorationForRetry,
+  reserveExplorationCredits,
+  saveExplorationEvidence,
+  savedEvidence,
+  type ExplorationJob,
+} from "../src/exploration/repository";
 import type { StoredCandidate } from "../src/domain/types";
 
 function storedCandidate(id: string, targetDate = "2026-07-16"): StoredCandidate {
@@ -78,7 +88,7 @@ function briefDraft(date: string, title = "首个热点项目"): BriefDraft {
 
 describe("D1 repository", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
+    await env.DB.exec("DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
   });
 
   it("creates all required tables through migrations", async () => {
@@ -87,9 +97,47 @@ describe("D1 repository", () => {
     expect(names).toEqual(expect.arrayContaining([
       "ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources",
       "entity_feedback", "brief_audio", "brief_covers", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
+      "item_explorations", "exploration_daily_usage",
     ]));
     const pushColumns = await env.DB.prepare("PRAGMA table_info(push_subscriptions)").all<{ name: string }>();
     expect(pushColumns.results.map((column) => column.name)).toContain("app_id");
+  });
+
+  it("atomically prevents concurrent exploration reservations from exceeding the daily limit", async () => {
+    const results = await Promise.all(Array.from({ length: 8 }, () =>
+      reserveExplorationCredits(env.DB, "2026-07-16T01:00:00.000Z", 12, 12)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const usage = await env.DB.prepare(
+      "SELECT reserved_credits, jobs_started FROM exploration_daily_usage WHERE usage_date = ?",
+    ).bind("2026-07-16").first<{ reserved_credits: number; jobs_started: number }>();
+    expect(usage).toEqual({ reserved_credits: 12, jobs_started: 1 });
+    expect(await reserveExplorationCredits(env.DB, "2026-07-17T01:00:00.000Z", 24, 12)).toBe(false);
+  });
+
+  it("claims duplicate exploration messages once and resumes from saved evidence after retry", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const entityId = (await getBrief(env.DB, "2026-07-16", "2026-07-16T01:00:00.000Z"))!.items[0]!.entityId;
+    const seed = { entityId, title: "Acme", summary: "Summary", whyItMatters: "Why", tags: [], canonicalUrl: "https://example.com", sourceUrls: [] };
+    const job: ExplorationJob = { kind: "item-exploration", entityId, jobId: "job-one" };
+    expect(await claimExplorationTrigger(env.DB, seed, job.jobId, "2026-07-16T01:00:00.000Z", "2026-07-16T01:15:00.000Z")).toBe(true);
+    expect(await claimExplorationTrigger(env.DB, seed, "job-two", "2026-07-16T01:00:01.000Z", "2026-07-16T01:15:01.000Z")).toBe(false);
+    expect(await claimExplorationWork(env.DB, job, "2026-07-16T01:01:00.000Z", "2026-07-16T01:11:00.000Z")).not.toBeNull();
+    expect(await claimExplorationWork(env.DB, job, "2026-07-16T01:01:01.000Z", "2026-07-16T01:11:01.000Z")).toBeNull();
+    const evidence = [{ id: "source_01", title: "Source", url: "https://example.com", domain: "example.com", queryKind: "context" as const, snippet: "Evidence", score: 1 }];
+    await saveExplorationEvidence(env.DB, job, evidence, 10, "2026-07-16T01:02:00.000Z");
+    await releaseExplorationForRetry(env.DB, job, "2026-07-16T01:03:00.000Z");
+    const retried = await claimExplorationWork(env.DB, job, "2026-07-16T01:04:00.000Z", "2026-07-16T01:14:00.000Z");
+    expect(savedEvidence(retried!)).toEqual(evidence);
+    expect((await getExplorationRow(env.DB, entityId))?.attempt_count).toBe(2);
+  });
+
+  it("recovers an exploration whose active lease expired", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const entityId = (await getBrief(env.DB, "2026-07-16", "2026-07-16T01:00:00.000Z"))!.items[0]!.entityId;
+    const seed = { entityId, title: "Acme", summary: "Summary", whyItMatters: "Why", tags: [], canonicalUrl: "https://example.com", sourceUrls: [] };
+    expect(await claimExplorationTrigger(env.DB, seed, "lost-job", "2026-07-16T01:00:00.000Z", "2026-07-16T01:05:00.000Z")).toBe(true);
+    expect(await claimExplorationTrigger(env.DB, seed, "recovery-job", "2026-07-16T01:06:00.000Z", "2026-07-16T01:21:00.000Z")).toBe(true);
+    expect((await getExplorationRow(env.DB, entityId))?.active_job_id).toBe("recovery-job");
   });
 
   it("hydrates audio states and claims one content hash idempotently", async () => {

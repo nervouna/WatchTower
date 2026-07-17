@@ -74,7 +74,65 @@ export interface BriefPayload {
   missingSources: SourceKind[];
   sourceCounts: Record<SourceKind, number>;
   audio: BriefAudio | null;
+  features?: { exploration?: boolean };
   items: BriefItem[];
+}
+
+export const EXPLORATION_QUERY_KINDS = ["context", "products", "perspectives", "industry"] as const;
+export type ExplorationQueryKind = (typeof EXPLORATION_QUERY_KINDS)[number];
+export type ExplorationStatus = "queued" | "researching" | "synthesizing" | "ready" | "failed";
+export type ExplorationQuality = "complete" | "partial";
+
+export interface ExplorationSource {
+  id: string;
+  title: string;
+  url: string;
+  domain: string;
+  queryKind: ExplorationQueryKind;
+}
+
+export interface ExplorationEvidenceSource extends ExplorationSource {
+  snippet: string;
+  score: number;
+}
+
+export interface CitedText {
+  text: string;
+  sourceIds: string[];
+}
+
+export interface ExplorationSections {
+  overview: CitedText;
+  relatedProducts: Array<{ name: string; relation: string; summary: string; sourceIds: string[] }>;
+  perspectives: Array<{ label: string; summary: string; sourceIds: string[] }>;
+  industry: CitedText | null;
+  watchNext: Array<{ signal: string; sourceIds: string[] }>;
+}
+
+export interface ExplorationPayload {
+  entityId: string;
+  title: string;
+  status: ExplorationStatus;
+  quality?: ExplorationQuality;
+  generatedAt?: string;
+  expiresAt?: string;
+  stale?: boolean;
+  refreshing?: boolean;
+  sections?: ExplorationSections;
+  sources?: ExplorationSource[];
+  pollAfterSeconds?: number;
+  retryAt?: string;
+  refreshLimited?: boolean;
+}
+
+export interface ExplorationSeed {
+  entityId: string;
+  title: string;
+  summary: string;
+  whyItMatters: string;
+  tags: string[];
+  canonicalUrl: string;
+  sourceUrls: string[];
 }
 
 export interface NarrationScript {

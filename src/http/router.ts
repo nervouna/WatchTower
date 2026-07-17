@@ -15,6 +15,7 @@ import { enqueueBriefAudio } from "../audio/jobs";
 import { enqueueBriefCover } from "../cover/jobs";
 import { handlePushSubscriptionRequest } from "../push/subscriptions";
 import { authenticate, AuthError, type AuthUser } from "../auth/auth0";
+import { explorationEnabled, handleExplorationRequest } from "../exploration/http";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -244,7 +245,7 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "BRIEF_COVER_ENABLED" | "MIMO_API_KEY" | "FAL_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">,
+  env: Pick<Env, "DB" | "ASSETS" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "BRIEF_COVER_ENABLED" | "MIMO_API_KEY" | "FAL_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET" | "ITEM_EXPLORATION_QUEUE" | "EXPLORATION_RATE_LIMITER" | "ITEM_EXPLORATION_ENABLED" | "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS" | "ITEM_EXPLORATION_CREDIT_RESERVATION">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -281,6 +282,11 @@ export async function handleRequest(
     const body = await env.BRIEF_AUDIO.get(cover.object_key);
     if (!body) return apiError("BRIEF_COVER_NOT_FOUND", "未找到播客封面。", 404);
     return new Response(body.body, { status: 200, headers });
+  }
+
+  const explorationMatch = /^\/api\/explorations\/([^/]+)\/([^/]+)$/u.exec(url.pathname);
+  if (explorationMatch?.[1] && explorationMatch[2]) {
+    return handleExplorationRequest(request, env, explorationMatch[1], explorationMatch[2], now);
   }
 
   const audioMatch = /^\/api\/briefs\/([^/]+)\/audio$/u.exec(url.pathname);
@@ -328,7 +334,7 @@ export async function handleRequest(
   if (url.pathname === "/api/briefs/latest") {
     const brief = await getLatestBrief(env.DB, nowIso);
     return brief
-      ? cachedJson(request, brief, head)
+      ? cachedJson(request, { ...brief, features: { exploration: explorationEnabled(env.ITEM_EXPLORATION_ENABLED) } }, head)
       : apiError("BRIEF_NOT_FOUND", "尚无可用简报。", 404);
   }
 
@@ -359,7 +365,7 @@ export async function handleRequest(
     if (!isValidUtcDate(date)) return apiError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
     const brief = await getBrief(env.DB, date, nowIso);
     return brief
-      ? cachedJson(request, brief, head)
+      ? cachedJson(request, { ...brief, features: { exploration: explorationEnabled(env.ITEM_EXPLORATION_ENABLED) } }, head)
       : apiError("BRIEF_NOT_FOUND", "未找到指定日期的简报。", 404);
   }
 

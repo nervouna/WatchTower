@@ -122,4 +122,46 @@ class BriefRepository {
     ]);
     return page;
   }
+
+  Future<LoadResult<Exploration>> loadExploration(
+    String briefDate,
+    String entityId,
+  ) async {
+    final cached = await _database.exploration(entityId);
+    final path = '/api/explorations/$briefDate/$entityId';
+    try {
+      var response = await _api.post(path);
+      var exploration = Exploration.decode(response.body);
+      final deadline = DateTime.now().add(const Duration(seconds: 95));
+      while (!exploration.ready &&
+          exploration.status != 'failed' &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(
+          Duration(seconds: exploration.pollAfterSeconds ?? 3),
+        );
+        response = await _api.get(path);
+        exploration = Exploration.decode(response.body);
+      }
+      if (!exploration.ready) throw const ApiException('本次探索未完成，可稍后重试。');
+      final fetchedAt = DateTime.now();
+      await _database.saveExploration(
+        entityId: entityId,
+        json: response.body,
+        fetchedAt: fetchedAt,
+        etag: response.etag,
+      );
+      return LoadResult(
+        value: exploration,
+        fetchedAt: fetchedAt,
+        offline: false,
+      );
+    } catch (_) {
+      if (cached == null) rethrow;
+      return LoadResult(
+        value: Exploration.decode(cached.json),
+        fetchedAt: cached.fetchedAt,
+        offline: true,
+      );
+    }
+  }
 }

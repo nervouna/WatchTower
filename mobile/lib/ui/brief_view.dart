@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -165,6 +166,7 @@ class _BriefViewState extends State<BriefView> {
                 briefDate: brief.date,
                 offline: offline,
                 auth: auth,
+                explorationEnabled: brief.explorationEnabled,
               ),
               const SizedBox(height: 12),
             ],
@@ -558,11 +560,13 @@ class _BriefItemCard extends StatelessWidget {
     required this.briefDate,
     required this.offline,
     required this.auth,
+    required this.explorationEnabled,
   });
   final BriefItem item;
   final String briefDate;
   final bool offline;
   final AuthController? auth;
+  final bool explorationEnabled;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -643,6 +647,17 @@ class _BriefItemCard extends StatelessWidget {
                 briefDate: briefDate,
                 offline: offline,
                 auth: auth!,
+              ),
+            ],
+            if (explorationEnabled) ...[
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => context.push(
+                  '/explorations/$briefDate/${item.entityId}',
+                  extra: item.title,
+                ),
+                icon: const Icon(Icons.manage_search),
+                label: const Text('拓展阅读'),
               ),
             ],
             const SizedBox(height: 14),

@@ -20,6 +20,24 @@ function removeTracking(url: URL): void {
   url.hash = "";
 }
 
+export function normalizePublicUrl(input: string): { url: string; domain: string } | null {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  url.hostname = url.hostname.toLowerCase();
+  if ((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80")) url.port = "";
+  url.username = "";
+  url.password = "";
+  removeTracking(url);
+  url.pathname = url.pathname.replace(/\/+$/u, "") || "/";
+  url.searchParams.sort();
+  return { url: url.toString(), domain: url.hostname.replace(/^www\./u, "") };
+}
+
 export function normalizeSourceUrl(source: SourceKind, input: string): NormalizedSourceUrl | null {
   let url: URL;
   try {

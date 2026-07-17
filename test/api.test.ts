@@ -66,7 +66,7 @@ describe("public API", () => {
   beforeEach(async () => {
     deletedManagementUrl = null;
     managementDeleteStatus = 204;
-    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
     await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)").bind("apple|allowed-user", now.toISOString()).run();
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.cover");

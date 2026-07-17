@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: WatchTower Public API
-  version: 1.0.0
-  description: Stable public and authenticated contract consumed by the WatchTower web and mobile clients.
+  version: 1.1.0
+  description: Stable public, authenticated, and item exploration contract consumed by the WatchTower web and mobile clients.
 servers:
   - url: https://watchtower.damao.io
 paths:
@@ -165,6 +165,43 @@ paths:
         '413': { $ref: '#/components/responses/MobilePushError' }
         '415': { $ref: '#/components/responses/MobilePushError' }
         '429': { $ref: '#/components/responses/MobilePushRateLimited' }
+  /api/explorations/{briefDate}/{entityId}:
+    parameters:
+      - { name: briefDate, in: path, required: true, schema: { type: string, format: date } }
+      - { name: entityId, in: path, required: true, schema: { type: string, pattern: '^entity_[a-f0-9]{32}$' } }
+    get:
+      operationId: getItemExploration
+      responses:
+        '200':
+          description: Existing exploration state or result
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Exploration' } }
+        '304': { description: Cached representation is current }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '503': { $ref: '#/components/responses/ApiError' }
+    post:
+      operationId: triggerItemExploration
+      responses:
+        '200':
+          description: Fresh or stale cached exploration result
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Exploration' } }
+        '202':
+          description: Exploration is queued or processing
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Exploration' } }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '429':
+          description: Exploration rate or daily credit limit reached
+          headers:
+            Retry-After: { schema: { type: string } }
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+        '503': { $ref: '#/components/responses/ApiError' }
+    options:
+      operationId: optionsItemExploration
+      responses:
+        '204': { description: CORS preflight response }
 components:
   securitySchemes:
     auth0:
@@ -280,6 +317,10 @@ components:
         missingSources: { type: array, items: { $ref: '#/components/schemas/SourceKind' } }
         sourceCounts: { type: object, additionalProperties: { type: integer } }
         audio: { anyOf: [{ $ref: '#/components/schemas/BriefAudio' }, { type: 'null' }] }
+        features:
+          type: object
+          properties:
+            exploration: { type: boolean, default: false }
         items: { type: array, items: { $ref: '#/components/schemas/BriefItem' } }
     BriefSummary:
       type: object
@@ -306,6 +347,71 @@ components:
         environment: { type: string, enum: [sandbox, production] }
         appId: { type: string, enum: [io.damao.watchtower.dev, io.damao.watchtower] }
         appVersion: { type: string }
+    ExplorationSource:
+      type: object
+      required: [id, title, url, domain, queryKind]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        url: { type: string, format: uri }
+        domain: { type: string }
+        queryKind: { type: string, enum: [context, products, perspectives, industry] }
+    CitedText:
+      type: object
+      required: [text, sourceIds]
+      properties:
+        text: { type: string }
+        sourceIds: { type: array, minItems: 1, items: { type: string } }
+    ExplorationSections:
+      type: object
+      required: [overview, relatedProducts, perspectives, industry, watchNext]
+      properties:
+        overview: { $ref: '#/components/schemas/CitedText' }
+        relatedProducts:
+          type: array
+          items:
+            type: object
+            required: [name, relation, summary, sourceIds]
+            properties:
+              name: { type: string }
+              relation: { type: string }
+              summary: { type: string }
+              sourceIds: { type: array, items: { type: string } }
+        perspectives:
+          type: array
+          items:
+            type: object
+            required: [label, summary, sourceIds]
+            properties:
+              label: { type: string }
+              summary: { type: string }
+              sourceIds: { type: array, items: { type: string } }
+        industry: { anyOf: [{ $ref: '#/components/schemas/CitedText' }, { type: 'null' }] }
+        watchNext:
+          type: array
+          items:
+            type: object
+            required: [signal, sourceIds]
+            properties:
+              signal: { type: string }
+              sourceIds: { type: array, items: { type: string } }
+    Exploration:
+      type: object
+      required: [entityId, title, status]
+      properties:
+        entityId: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [queued, researching, synthesizing, ready, failed] }
+        quality: { type: string, enum: [complete, partial] }
+        generatedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        stale: { type: boolean }
+        refreshing: { type: boolean }
+        refreshLimited: { type: boolean }
+        pollAfterSeconds: { type: integer, minimum: 1 }
+        retryAt: { type: string, format: date-time }
+        sections: { $ref: '#/components/schemas/ExplorationSections' }
+        sources: { type: array, items: { $ref: '#/components/schemas/ExplorationSource' } }
     ApiError:
       type: object
       required: [error]

@@ -213,6 +213,7 @@ class Brief {
     required this.sourceCounts,
     required this.audio,
     required this.items,
+    this.explorationEnabled = false,
   });
 
   factory Brief.fromJson(Map<String, dynamic> json) {
@@ -234,6 +235,9 @@ class Brief {
           source: counts[source] is int ? counts[source] as int : 0,
       },
       audio: json['audio'] == null ? null : BriefAudio.fromJson(json['audio']),
+      explorationEnabled:
+          json['features'] is Map<String, dynamic> &&
+          (json['features'] as Map<String, dynamic>)['exploration'] == true,
       items: _list(
         json,
         'items',
@@ -254,6 +258,7 @@ class Brief {
   final Map<String, int> sourceCounts;
   final BriefAudio? audio;
   final List<BriefItem> items;
+  final bool explorationEnabled;
 }
 
 class BriefSummary {
@@ -304,4 +309,228 @@ class BriefListPage {
 
   final List<BriefSummary> briefs;
   final String? nextCursor;
+}
+
+class ExplorationSource {
+  const ExplorationSource({
+    required this.id,
+    required this.title,
+    required this.url,
+    required this.domain,
+    required this.queryKind,
+  });
+  factory ExplorationSource.fromJson(Object? value) {
+    final json = _map(value, 'exploration.source');
+    final queryKind = _string(json, 'queryKind');
+    final url = Uri.tryParse(_string(json, 'url'));
+    if (!const {
+          'context',
+          'products',
+          'perspectives',
+          'industry',
+        }.contains(queryKind) ||
+        url == null ||
+        !const {'http', 'https'}.contains(url.scheme)) {
+      return _invalid('exploration.source');
+    }
+    return ExplorationSource(
+      id: _string(json, 'id'),
+      title: _string(json, 'title'),
+      url: url,
+      domain: _string(json, 'domain'),
+      queryKind: queryKind,
+    );
+  }
+  final String id;
+  final String title;
+  final Uri url;
+  final String domain;
+  final String queryKind;
+}
+
+class CitedText {
+  const CitedText({required this.text, required this.sourceIds});
+  factory CitedText.fromJson(Object? value) {
+    final json = _map(value, 'citedText');
+    return CitedText(
+      text: _string(json, 'text'),
+      sourceIds: _strings(json, 'sourceIds'),
+    );
+  }
+  final String text;
+  final List<String> sourceIds;
+}
+
+class RelatedProduct {
+  const RelatedProduct({
+    required this.name,
+    required this.relation,
+    required this.summary,
+    required this.sourceIds,
+  });
+  factory RelatedProduct.fromJson(Object? value) {
+    final json = _map(value, 'relatedProduct');
+    return RelatedProduct(
+      name: _string(json, 'name'),
+      relation: _string(json, 'relation'),
+      summary: _string(json, 'summary'),
+      sourceIds: _strings(json, 'sourceIds'),
+    );
+  }
+  final String name;
+  final String relation;
+  final String summary;
+  final List<String> sourceIds;
+}
+
+class ExternalPerspective {
+  const ExternalPerspective({
+    required this.label,
+    required this.summary,
+    required this.sourceIds,
+  });
+  factory ExternalPerspective.fromJson(Object? value) {
+    final json = _map(value, 'perspective');
+    return ExternalPerspective(
+      label: _string(json, 'label'),
+      summary: _string(json, 'summary'),
+      sourceIds: _strings(json, 'sourceIds'),
+    );
+  }
+  final String label;
+  final String summary;
+  final List<String> sourceIds;
+}
+
+class WatchSignal {
+  const WatchSignal({required this.signal, required this.sourceIds});
+  factory WatchSignal.fromJson(Object? value) {
+    final json = _map(value, 'watchSignal');
+    return WatchSignal(
+      signal: _string(json, 'signal'),
+      sourceIds: _strings(json, 'sourceIds'),
+    );
+  }
+  final String signal;
+  final List<String> sourceIds;
+}
+
+class ExplorationSections {
+  const ExplorationSections({
+    required this.overview,
+    required this.relatedProducts,
+    required this.perspectives,
+    required this.industry,
+    required this.watchNext,
+  });
+  factory ExplorationSections.fromJson(Object? value) {
+    final json = _map(value, 'exploration.sections');
+    return ExplorationSections(
+      overview: CitedText.fromJson(json['overview']),
+      relatedProducts: _list(
+        json,
+        'relatedProducts',
+      ).map(RelatedProduct.fromJson).toList(growable: false),
+      perspectives: _list(
+        json,
+        'perspectives',
+      ).map(ExternalPerspective.fromJson).toList(growable: false),
+      industry: json['industry'] == null
+          ? null
+          : CitedText.fromJson(json['industry']),
+      watchNext: _list(
+        json,
+        'watchNext',
+      ).map(WatchSignal.fromJson).toList(growable: false),
+    );
+  }
+  final CitedText overview;
+  final List<RelatedProduct> relatedProducts;
+  final List<ExternalPerspective> perspectives;
+  final CitedText? industry;
+  final List<WatchSignal> watchNext;
+}
+
+class Exploration {
+  const Exploration({
+    required this.entityId,
+    required this.title,
+    required this.status,
+    this.quality,
+    this.generatedAt,
+    this.expiresAt,
+    this.stale = false,
+    this.refreshing = false,
+    this.refreshLimited = false,
+    this.sections,
+    this.sources = const [],
+    this.pollAfterSeconds,
+    this.retryAt,
+  });
+
+  factory Exploration.fromJson(Map<String, dynamic> json) {
+    final status = _string(json, 'status');
+    if (!const {
+      'queued',
+      'researching',
+      'synthesizing',
+      'ready',
+      'failed',
+    }.contains(status)) {
+      return _invalid('exploration.status');
+    }
+    final quality = json['quality'];
+    if (quality != null && !const {'complete', 'partial'}.contains(quality)) {
+      return _invalid('exploration.quality');
+    }
+    final poll = json['pollAfterSeconds'];
+    if (poll != null && poll is! int) {
+      return _invalid('exploration.pollAfterSeconds');
+    }
+    return Exploration(
+      entityId: _string(json, 'entityId'),
+      title: _string(json, 'title'),
+      status: status,
+      quality: quality as String?,
+      generatedAt: json['generatedAt'] is String
+          ? DateTime.parse(json['generatedAt'] as String)
+          : null,
+      expiresAt: json['expiresAt'] is String
+          ? DateTime.parse(json['expiresAt'] as String)
+          : null,
+      stale: json['stale'] == true,
+      refreshing: json['refreshing'] == true,
+      refreshLimited: json['refreshLimited'] == true,
+      sections: json['sections'] == null
+          ? null
+          : ExplorationSections.fromJson(json['sections']),
+      sources: json['sources'] == null
+          ? const []
+          : _list(
+              json,
+              'sources',
+            ).map(ExplorationSource.fromJson).toList(growable: false),
+      pollAfterSeconds: poll as int?,
+      retryAt: json['retryAt'] is String
+          ? DateTime.parse(json['retryAt'] as String)
+          : null,
+    );
+  }
+
+  factory Exploration.decode(String value) =>
+      Exploration.fromJson(_map(jsonDecode(value), 'exploration'));
+  final String entityId;
+  final String title;
+  final String status;
+  final String? quality;
+  final DateTime? generatedAt;
+  final DateTime? expiresAt;
+  final bool stale;
+  final bool refreshing;
+  final bool refreshLimited;
+  final ExplorationSections? sections;
+  final List<ExplorationSource> sources;
+  final int? pollAfterSeconds;
+  final DateTime? retryAt;
+  bool get ready => status == 'ready' && sections != null;
 }
