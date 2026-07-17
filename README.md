@@ -130,6 +130,15 @@ flutter build appbundle
 flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
 ```
 
+使用真实 iPhone 验证隔离 Dev 环境时，必须显式指定 Dev API；仅选择 `dev` flavor 不会自动切换服务端：
+
+```sh
+flutter run \
+  --flavor dev \
+  -d <device-id> \
+  --dart-define=WATCHTOWER_API_BASE_URL=https://dev.watchtower.damao.io
+```
+
 iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`io.damao.watchtower.dev`、sandbox APNs），TestFlight/App Store 使用 `prod`（`io.damao.watchtower`、production APNs）。Android applicationId 仍为 `io.damao.watchtower`。
 
 推送需要两个已启用 Push Notifications 的 Apple Developer App ID、真实设备，以及以下 Worker secrets：`APNS_TEAM_ID`、`APNS_SANDBOX_KEY_ID`、`APNS_SANDBOX_PRIVATE_KEY`、`APNS_PRODUCTION_KEY_ID`、`APNS_PRODUCTION_PRIVATE_KEY`、`PUSH_TOKEN_ENCRYPTION_KEY`、`PUSH_TOKEN_HMAC_KEY`。私钥和加密密钥不得写入仓库或日志。Production APNs 必须通过 TestFlight 或 production provisioning 验证；本地 Debug 构建始终使用 sandbox。
@@ -154,7 +163,7 @@ Web 和移动端使用 Auth0 Universal Login，并只启用 Sign in with Apple�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/feedback?entityId=...` | 读取最多 20 个实体的当前反馈；不传实体时可用于验证凭证。 |
+| `GET` | `/api/feedback?entityId=...` | 读取最多 20 个实体的当前共享反馈；不传实体时返回空反馈集合。 |
 | `PUT` | `/api/feedback/:entityId` | 保存反馈，请求体为 `{"value":"follow","briefDate":"YYYY-MM-DD"}`。 |
 | `DELETE` | `/api/feedback/:entityId` | 清除实体反馈。 |
 | `GET` | `/api/auth/config` | 返回公开的 Auth0 客户端配置。 |
@@ -173,7 +182,7 @@ Web access token 只保存在 Auth0 SPA SDK 的内存缓存中；刷新页面时
 - `migrations/` 是 D1 schema 的演进记录。不要修改已经应用的 migration；schema 变化应新增 migration。
 - `wrangler.jsonc` 是 Worker 入口、D1 绑定、静态资源、必需 secrets、计划任务、可观测性和生产域名的事实来源。
 - 当前生产环境关闭 `workers.dev`，仅通过 `watchtower.damao.io` 提供服务。
-- `env.dev` 部署为独立的 `watchtower-daily-brief-dev` Worker，通过 `dev.watchtower.damao.io` 提供 Web 测试环境。它使用独立 D1、R2 和队列，关闭 cron、语音生成和 queue consumers，并由 Cloudflare Access 的精确邮箱策略保护。Access 成员名单只在 Cloudflare Dashboard 管理，不写入仓库。
+- `env.dev` 部署为独立的 `watchtower-daily-brief-dev` Worker，通过 `dev.watchtower.damao.io` 提供测试环境。它使用独立 D1、R2 和队列，并关闭 cron、语音生成和 queue consumers。Web 页面由 Cloudflare Access 的精确邮箱策略保护；更具体的 `/api/*` Access Bypass 允许原生客户端连接，公开接口仍遵循公开 API 契约，受保护接口仍由 Worker 的 Auth0 验证和 D1 白名单授权。Access 成员名单只在 Cloudflare Dashboard 管理，不写入仓库。
 - 生产部署前先应用新的远程 migration，再部署 Worker：
 
 ```sh
