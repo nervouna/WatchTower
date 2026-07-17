@@ -333,26 +333,6 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        const _Skeleton(width: 120, height: 22),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                _Skeleton(width: 260, height: 22),
-                SizedBox(height: 16),
-                _Skeleton(width: double.infinity, height: 16),
-                SizedBox(height: 8),
-                _Skeleton(width: 300, height: 16),
-                SizedBox(height: 18),
-                _Skeleton(width: double.infinity, height: 72),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
