@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:watchtower/audio/audio_controller.dart';
 import 'package:watchtower/data/api_client.dart';
@@ -10,7 +11,11 @@ import 'package:watchtower/theme.dart';
 import 'package:watchtower/ui/brief_view.dart';
 import 'package:watchtower/ui/screens.dart';
 
-Brief _brief({List<BriefItem> items = const [], BriefAudio? audio}) => Brief(
+Brief _brief({
+  List<BriefItem> items = const [],
+  BriefAudio? audio,
+  bool explorationEnabled = false,
+}) => Brief(
   date: '2026-07-17',
   status: 'partial',
   publishedAt: DateTime.utc(2026, 7, 17),
@@ -26,6 +31,7 @@ Brief _brief({List<BriefItem> items = const [], BriefAudio? audio}) => Brief(
   },
   audio: audio,
   items: items,
+  explorationEnabled: explorationEnabled,
 );
 
 final _item = BriefItem(
@@ -151,4 +157,40 @@ void main() {
     expect(find.text('音频暂时不可用，文字简报不受影响。'), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
   });
+
+  testWidgets(
+    'shows exploration only when enabled and opens the full-screen route',
+    (tester) async {
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => Scaffold(
+              body: BriefView(
+                brief: _brief(items: [_item], explorationEnabled: true),
+                offline: false,
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/explorations/:date/:entityId',
+            builder: (context, state) => const Scaffold(body: Text('探索详情页')),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp.router(
+          theme: watchTowerTheme(Brightness.light),
+          routerConfig: router,
+        ),
+      );
+    await tester.scrollUntilVisible(find.text('拓展阅读'), 300);
+    await tester.ensureVisible(find.text('拓展阅读'));
+    await tester.pumpAndSettle();
+      expect(find.text('拓展阅读'), findsOneWidget);
+      await tester.tap(find.text('拓展阅读'));
+      await tester.pumpAndSettle();
+      expect(find.text('探索详情页'), findsOneWidget);
+    },
+  );
 }

@@ -46,6 +46,19 @@ async function api(path) {
   return payload;
 }
 
+async function explorationApi(path, options = {}) {
+  const response = await fetch(path, { ...options, headers: { Accept: "application/json", ...options.headers } });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw Object.assign(new Error(payload?.error?.message || "本次探索未完成，可稍后重试"), {
+      status: response.status,
+      code: payload?.error?.code,
+      retryAfter: response.headers.get("Retry-After"),
+    });
+  }
+  return payload;
+}
+
 async function feedbackApi(path, options = {}) {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
@@ -208,6 +221,178 @@ function renderBriefAudio(audio) {
   return section;
 }
 
+function citationLinks(sourceIds, catalog) {
+  const wrapper = element("span", "exploration-citations");
+  for (const sourceId of sourceIds) {
+    const source = catalog.get(sourceId);
+    if (!source) continue;
+    const node = link(source.url, sourceId.replace("source_", ""), "exploration-citation");
+    node.target = "_blank";
+    node.rel = "noopener noreferrer";
+    node.setAttribute("aria-label", `资料来源：${source.title}`);
+    wrapper.append(node);
+  }
+  return wrapper;
+}
+
+function citedParagraph(value, catalog, className = "exploration-copy") {
+  const paragraph = element("p", className);
+  paragraph.append(document.createTextNode(value.text), citationLinks(value.sourceIds, catalog));
+  return paragraph;
+}
+
+function renderExplorationResult(panel, payload) {
+  const catalog = new Map((payload.sources ?? []).map((source) => [source.id, source]));
+  const content = element("div", "exploration-content");
+  const state = element("div", "exploration-result-meta");
+  if (payload.quality === "partial") state.append(element("span", "exploration-quality", "部分资料"));
+  if (payload.stale) state.append(element("span", "exploration-stale", payload.refreshing ? "旧结果 · 正在更新" : "旧结果"));
+  if (payload.refreshLimited) state.append(element("span", "exploration-stale", "今日刷新额度已用完"));
+  if (state.childElementCount) content.append(state);
+
+  const sections = payload.sections;
+  const overview = element("section", "exploration-section");
+  overview.append(element("h3", "exploration-heading", "展开说明"), citedParagraph(sections.overview, catalog));
+  content.append(overview);
+
+  const related = element("section", "exploration-section");
+  related.append(element("h3", "exploration-heading", "相关产品"));
+  if (sections.relatedProducts.length === 0) related.append(element("p", "exploration-empty", "现有资料不足以确认相关产品关系。"));
+  else {
+    const list = element("ul", "exploration-list");
+    for (const item of sections.relatedProducts) {
+      const row = element("li", "exploration-list-item");
+      row.append(element("strong", "exploration-item-title", `${item.name} · ${item.relation}`));
+      const copy = element("p", "exploration-copy", item.summary);
+      copy.append(citationLinks(item.sourceIds, catalog));
+      row.append(copy);
+      list.append(row);
+    }
+    related.append(list);
+  }
+  content.append(related);
+
+  const perspectives = element("section", "exploration-section");
+  perspectives.append(element("h3", "exploration-heading", "外部观点"));
+  if (sections.perspectives.length === 0) perspectives.append(element("p", "exploration-empty", "暂未找到足够可靠的外部观点。"));
+  else {
+    const list = element("ul", "exploration-list");
+    for (const item of sections.perspectives) {
+      const row = element("li", "exploration-list-item");
+      row.append(element("strong", "exploration-item-title", item.label));
+      const copy = element("p", "exploration-copy", item.summary);
+      copy.append(citationLinks(item.sourceIds, catalog));
+      row.append(copy);
+      list.append(row);
+    }
+    perspectives.append(list);
+  }
+  content.append(perspectives);
+
+  const industry = element("section", "exploration-section");
+  industry.append(element("h3", "exploration-heading", "行业位置"));
+  industry.append(sections.industry ? citedParagraph(sections.industry, catalog) : element("p", "exploration-empty", "现有资料不足以判断行业位置。"));
+  content.append(industry);
+
+  const watch = element("section", "exploration-section");
+  watch.append(element("h3", "exploration-heading", "接下来关注什么"));
+  if (sections.watchNext.length === 0) watch.append(element("p", "exploration-empty", "暂时没有足够证据支持可验证的后续信号。"));
+  else {
+    const list = element("ul", "exploration-watch-list");
+    for (const item of sections.watchNext) {
+      const row = element("li", "exploration-watch-item", item.signal);
+      row.append(citationLinks(item.sourceIds, catalog));
+      list.append(row);
+    }
+    watch.append(list);
+  }
+  content.append(watch);
+
+  const sourceSection = element("section", "exploration-sources");
+  sourceSection.append(element("h3", "exploration-heading", "资料来源"));
+  const sourceList = element("ol", "exploration-source-list");
+  for (const source of payload.sources ?? []) {
+    const row = element("li", "exploration-source-item");
+    const sourceLink = link(source.url, source.title, "exploration-source-link");
+    sourceLink.target = "_blank";
+    sourceLink.rel = "noopener noreferrer";
+    row.append(sourceLink, element("span", "exploration-domain", source.domain));
+    sourceList.append(row);
+  }
+  sourceSection.append(sourceList);
+  content.append(sourceSection);
+
+  const updated = payload.generatedAt ? new Date(payload.generatedAt).toLocaleString("zh-CN", { timeZone: "UTC", hour12: false }) : "未知时间";
+  content.append(element("p", "exploration-disclaimer", `AI 基于公开资料整理，信息可能随时间变化，请以原始来源为准。更新于 ${updated} UTC。`));
+  panel.replaceChildren(content);
+}
+
+function renderExplorationControl(item, briefDate) {
+  const wrapper = element("div", "exploration-wrapper");
+  const panelId = `exploration-${item.entityId}`;
+  const button = element("button", "exploration-trigger", "拓展阅读");
+  button.type = "button";
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-controls", panelId);
+  const panel = element("div", "exploration-panel");
+  panel.id = panelId;
+  panel.hidden = true;
+  panel.setAttribute("aria-live", "polite");
+  let started = false;
+
+  const showState = (copy, kind = "loading") => {
+    const state = element("div", `exploration-state exploration-state-${kind}`);
+    state.setAttribute("role", "status");
+    if (kind === "loading") state.append(element("span", "exploration-spinner"));
+    state.append(element("p", "exploration-state-copy", copy));
+    panel.replaceChildren(state);
+  };
+
+  const load = async () => {
+    const path = `/api/explorations/${briefDate}/${item.entityId}`;
+    showState("正在查找背景、相关产品和外部观点…");
+    try {
+      let payload = await explorationApi(path, { method: "POST" });
+      const startedAt = Date.now();
+      if (payload.status === "ready" && payload.sections) renderExplorationResult(panel, payload);
+      while (payload.status !== "ready" && payload.status !== "failed" && Date.now() - startedAt < 95_000) {
+        showState(payload.status === "researching" ? "正在整理找到的资料…" : "正在查找背景、相关产品和外部观点…");
+        await new Promise((resolve) => window.setTimeout(resolve, (payload.pollAfterSeconds ?? 3) * 1000));
+        payload = await explorationApi(path);
+      }
+      while (payload.status === "ready" && payload.refreshing && Date.now() - startedAt < 95_000) {
+        await new Promise((resolve) => window.setTimeout(resolve, (payload.pollAfterSeconds ?? 3) * 1000));
+        payload = await explorationApi(path);
+        if (payload.sections) renderExplorationResult(panel, payload);
+      }
+      if (payload.status === "ready" && payload.sections) renderExplorationResult(panel, payload);
+      else showState(payload.status === "failed" ? "本次探索未完成，可稍后重试。" : "探索仍在进行，请稍后重新打开查看。", "error");
+    } catch (error) {
+      const copy = error.code === "EXPLORATION_BUDGET_EXHAUSTED"
+        ? "今日探索额度已用完，请明日再试。"
+        : error.message || "本次探索未完成，可稍后重试。";
+      showState(copy, "error");
+      started = false;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  button.addEventListener("click", () => {
+    const expanding = panel.hidden;
+    panel.hidden = !expanding;
+    button.setAttribute("aria-expanded", String(expanding));
+    button.textContent = expanding ? "收起阅读" : "拓展阅读";
+    if (expanding && !started) {
+      started = true;
+      button.disabled = true;
+      void load();
+    }
+  });
+  wrapper.append(button, panel);
+  return wrapper;
+}
+
 async function renderBrief(brief, isLatest) {
   document.title = `${brief.date} · WatchTower 热点简报`;
   const fragment = document.createDocumentFragment();
@@ -282,6 +467,7 @@ async function renderBrief(brief, isLatest) {
     const sources = element("div", "sources");
     sources.append(element("span", "sources-label", "来源"));
     for (const source of item.sources) sources.append(externalLink(source));
+    if (brief.features?.exploration === true) sources.append(renderExplorationControl(item, brief.date));
     article.append(sources);
     if (feedbackToken) article.append(renderFeedbackControls(item, brief.date, feedback[item.entityId]));
     row.append(article);
@@ -349,7 +535,7 @@ function renderPrivacy() {
   const blocks = [
     ["本地阅读数据", "你阅读过哪些简报、音频播放位置和离线缓存只保存在当前设备，不会上传到 WatchTower。"],
     ["发布通知", "只有在你主动开启移动 App 的每日提醒后，App 才会把 APNs 设备令牌加密发送给 WatchTower。令牌只用于发送新简报通知；关闭提醒后，服务端会删除对应订阅。"],
-    ["公开来源", "简报中的外部链接会在目标网站打开，并适用目标网站各自的隐私政策。"],
+    ["公开来源与拓展阅读", "简报中的外部链接会在目标网站打开。点击“拓展阅读”会触发服务端检索公开资料，同一热点的结果会匿名共享和缓存；原始 IP 仅由 Cloudflare 临时用于宽松限流，不写入 WatchTower 数据库。"],
   ];
   for (const [title, copy] of blocks) {
     const block = element("section", "archive-month");

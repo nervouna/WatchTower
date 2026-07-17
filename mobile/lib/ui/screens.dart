@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_model.dart';
 import '../data/brief_repository.dart';
+import '../data/api_client.dart';
 import '../models.dart';
 import '../push/push_controller.dart';
 import 'brief_view.dart';
@@ -348,6 +350,352 @@ class PrivacyScreen extends StatelessWidget {
       const Text(
         '简报中的外部链接会通过系统浏览器打开，目标网站适用其各自的隐私政策。',
         style: TextStyle(height: 1.7),
+      ),
+      const SizedBox(height: 16),
+      Text(
+        '拓展阅读',
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        '点击“拓展阅读”会触发服务端检索公开资料。同一热点的结果会匿名共享和缓存；原始 IP 仅由 Cloudflare 临时用于宽松限流，不写入 WatchTower 数据库。',
+        style: TextStyle(height: 1.7),
+      ),
+    ],
+  );
+}
+
+class ExplorationScreen extends StatefulWidget {
+  const ExplorationScreen({
+    required this.briefDate,
+    required this.entityId,
+    super.key,
+  });
+  final String briefDate;
+  final String entityId;
+  @override
+  State<ExplorationScreen> createState() => _ExplorationScreenState();
+}
+
+class _ExplorationScreenState extends State<ExplorationScreen> {
+  Future<LoadResult<Exploration>>? _future;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= context.read<BriefRepository>().loadExploration(
+      widget.briefDate,
+      widget.entityId,
+    );
+  }
+
+  void _retry() => setState(() {
+    _future = context.read<BriefRepository>().loadExploration(
+      widget.briefDate,
+      widget.entityId,
+    );
+  });
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<LoadResult<Exploration>>(
+    future: _future,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const _ExplorationLoading();
+      }
+      if (snapshot.hasError || snapshot.data == null) {
+        return ErrorState(
+          message: snapshot.error is ApiException
+              ? (snapshot.error! as ApiException).message
+              : '本次探索未完成，可稍后重试。',
+          onRetry: _retry,
+        );
+      }
+      return _ExplorationResult(result: snapshot.data!);
+    },
+  );
+}
+
+class _ExplorationLoading extends StatelessWidget {
+  const _ExplorationLoading();
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: EdgeInsets.fromLTRB(
+      _horizontalPadding(context, 16),
+      16,
+      _horizontalPadding(context, 16),
+      32,
+    ),
+    children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '正在查找背景、相关产品和外部观点…',
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '通常会在 90 秒内完成，原简报内容不受影响。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _ExplorationResult extends StatelessWidget {
+  const _ExplorationResult({required this.result});
+  final LoadResult<Exploration> result;
+
+  @override
+  Widget build(BuildContext context) {
+    final exploration = result.value;
+    final sections = exploration.sections!;
+    final sources = {
+      for (final source in exploration.sources) source.id: source,
+    };
+    return SelectionArea(
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(
+          _horizontalPadding(context, 16),
+          12,
+          _horizontalPadding(context, 16),
+          40,
+        ),
+        children: [
+          if (result.offline)
+            _ExplorationNotice(
+              '当前显示离线缓存，生成于 ${_utc(exploration.generatedAt)} UTC。',
+            ),
+          if (exploration.stale || exploration.refreshing)
+            _ExplorationNotice(
+              exploration.refreshing
+                  ? '正在后台更新，当前先显示上一次结果。'
+                  : '当前结果已过期，可联网后重新打开刷新。',
+            ),
+          if (exploration.refreshLimited)
+            const _ExplorationNotice('今日刷新额度已用完，当前继续显示已有结果。'),
+          _ExplorationSection(
+            title: '展开说明',
+            children: [
+              _CitedCopy(
+                text: sections.overview.text,
+                sourceIds: sections.overview.sourceIds,
+                sources: sources,
+              ),
+            ],
+          ),
+          _ExplorationSection(
+            title: '相关产品',
+            children: sections.relatedProducts.isEmpty
+                ? const [Text('现有资料不足以确认相关产品关系。')]
+                : [
+                    for (final item in sections.relatedProducts)
+                      _ExplorationEntry(
+                        title: '${item.name} · ${item.relation}',
+                        summary: item.summary,
+                        sourceIds: item.sourceIds,
+                        sources: sources,
+                      ),
+                  ],
+          ),
+          _ExplorationSection(
+            title: '外部观点',
+            children: sections.perspectives.isEmpty
+                ? const [Text('暂未找到足够可靠的外部观点。')]
+                : [
+                    for (final item in sections.perspectives)
+                      _ExplorationEntry(
+                        title: item.label,
+                        summary: item.summary,
+                        sourceIds: item.sourceIds,
+                        sources: sources,
+                      ),
+                  ],
+          ),
+          _ExplorationSection(
+            title: '行业位置',
+            children: [
+              sections.industry == null
+                  ? const Text('现有资料不足以判断行业位置。')
+                  : _CitedCopy(
+                      text: sections.industry!.text,
+                      sourceIds: sections.industry!.sourceIds,
+                      sources: sources,
+                    ),
+            ],
+          ),
+          _ExplorationSection(
+            title: '接下来关注什么',
+            children: sections.watchNext.isEmpty
+                ? const [Text('暂时没有足够证据支持可验证的后续信号。')]
+                : [
+                    for (final item in sections.watchNext)
+                      _CitedCopy(
+                        text: item.signal,
+                        sourceIds: item.sourceIds,
+                        sources: sources,
+                      ),
+                  ],
+          ),
+          _ExplorationSection(
+            title: '资料来源',
+            children: [
+              for (final source in exploration.sources)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  minTileHeight: 56,
+                  title: Text(source.title),
+                  subtitle: Text(source.domain),
+                  trailing: const Icon(Icons.open_in_new, size: 20),
+                  onTap: () =>
+                      launchUrl(source.url, mode: LaunchMode.inAppBrowserView),
+                ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+            child: Text(
+              'AI 基于公开资料整理，信息可能随时间变化，请以原始来源为准。更新于 ${_utc(exploration.generatedAt)} UTC。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _utc(DateTime? value) => value == null
+      ? '未知时间'
+      : value.toUtc().toIso8601String().replaceFirst('T', ' ').substring(0, 16);
+}
+
+class _ExplorationNotice extends StatelessWidget {
+  const _ExplorationNotice(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(text),
+  );
+}
+
+class _ExplorationSection extends StatelessWidget {
+  const _ExplorationSection({required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          for (var index = 0; index < children.length; index++) ...[
+            children[index],
+            if (index < children.length - 1) const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _ExplorationEntry extends StatelessWidget {
+  const _ExplorationEntry({
+    required this.title,
+    required this.summary,
+    required this.sourceIds,
+    required this.sources,
+  });
+  final String title;
+  final String summary;
+  final List<String> sourceIds;
+  final Map<String, ExplorationSource> sources;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 6),
+      _CitedCopy(text: summary, sourceIds: sourceIds, sources: sources),
+    ],
+  );
+}
+
+class _CitedCopy extends StatelessWidget {
+  const _CitedCopy({
+    required this.text,
+    required this.sourceIds,
+    required this.sources,
+  });
+  final String text;
+  final List<String> sourceIds;
+  final Map<String, ExplorationSource> sources;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        text,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.65),
+      ),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          for (final id in sourceIds)
+            if (sources[id] != null)
+              TextButton(
+                onPressed: () => launchUrl(
+                  sources[id]!.url,
+                  mode: LaunchMode.inAppBrowserView,
+                ),
+                child: Text('来源 ${id.replaceFirst('source_', '')}'),
+              ),
+        ],
       ),
     ],
   );

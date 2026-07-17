@@ -33,7 +33,7 @@ const now = new Date("2026-07-16T01:00:00.000Z");
 
 describe("public API", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.exec("DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
   });
 

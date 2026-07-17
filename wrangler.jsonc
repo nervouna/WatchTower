@@ -39,6 +39,10 @@
       {
         "binding": "BRIEF_PUSH_QUEUE",
         "queue": "watchtower-brief-push-jobs"
+      },
+      {
+        "binding": "ITEM_EXPLORATION_QUEUE",
+        "queue": "watchtower-item-exploration-jobs"
       }
     ],
     "consumers": [
@@ -56,6 +60,14 @@
         "max_batch_timeout": 5,
         "max_retries": 3,
         "retry_delay": 60
+      },
+      {
+        "queue": "watchtower-item-exploration-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "max_concurrency": 2,
+        "retry_delay": 60
       }
     ]
   },
@@ -64,10 +76,19 @@
       "name": "MOBILE_PUSH_RATE_LIMITER",
       "namespace_id": "1001",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "EXPLORATION_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 3, "period": 60 }
     }
   ],
   "vars": {
-    "BRIEF_AUDIO_ENABLED": "true"
+    "BRIEF_AUDIO_ENABLED": "true",
+    "ITEM_EXPLORATION_ENABLED": "false",
+    "ITEM_EXPLORATION_CACHE_TTL_HOURS": "24",
+    "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS": "120",
+    "ITEM_EXPLORATION_CREDIT_RESERVATION": "12"
   },
   "secrets": {
     "required": [

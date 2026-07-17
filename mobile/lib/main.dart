@@ -75,6 +75,20 @@ GoRouter _router() => GoRouter(
         body: SafeArea(child: PrivacyScreen()),
       ),
     ),
+    GoRoute(
+      path: '/explorations/:date/:entityId',
+      builder: (context, state) => Scaffold(
+        appBar: _BackAppBar(
+          title: state.extra is String ? state.extra! as String : '拓展阅读',
+        ),
+        body: SafeArea(
+          child: ExplorationScreen(
+            briefDate: state.pathParameters['date']!,
+            entityId: state.pathParameters['entityId']!,
+          ),
+        ),
+      ),
+    ),
   ],
 );
 

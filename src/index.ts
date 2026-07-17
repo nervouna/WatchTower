@@ -10,6 +10,14 @@ import {
   PUSH_QUEUE_NAME,
   type BriefPushJob,
 } from "./push/jobs";
+import {
+  abandonExplorationJob,
+  EXPLORATION_QUEUE_NAME,
+  ExplorationProcessingError,
+  processExplorationJob,
+  retryExplorationJob,
+  type ExplorationJob,
+} from "./exploration/jobs";
 
 export default {
   fetch(request, env): Promise<Response> {
@@ -64,7 +72,9 @@ export default {
   async queue(batch, env): Promise<void> {
     for (const message of batch.messages) {
       try {
-        if (batch.queue === PUSH_QUEUE_NAME) {
+        if (batch.queue === EXPLORATION_QUEUE_NAME) {
+          await processExplorationJob(env, message.body as ExplorationJob, new Date());
+        } else if (batch.queue === PUSH_QUEUE_NAME) {
           const job = message.body as BriefPushJob;
           if (job.kind === "brief-push-fanout") await processPushFanout(env, job, new Date(), message.attempts > 1);
           else await processPushDelivery(env, job, new Date(), message.attempts > 1);
@@ -72,12 +82,17 @@ export default {
           await processBriefAudioJob(env, message.body as BriefAudioJob, new Date(), message.attempts > 1);
         }
         message.ack();
-      } catch {
-        if (message.attempts >= 3) {
+      } catch (error) {
+        const terminal = message.attempts >= 3 || (error instanceof ExplorationProcessingError && !error.retryable);
+        if (terminal) {
           if (batch.queue === PUSH_QUEUE_NAME) await abandonBriefPushJob(env.DB, message.body as BriefPushJob);
+          if (batch.queue === EXPLORATION_QUEUE_NAME) await abandonExplorationJob(env.DB, message.body as ExplorationJob, error);
           message.ack();
-        } else message.retry({ delaySeconds: 60 });
+        } else {
+          if (batch.queue === EXPLORATION_QUEUE_NAME) await retryExplorationJob(env.DB, message.body as ExplorationJob);
+          message.retry({ delaySeconds: 60 });
+        }
       }
     }
   },
-} satisfies ExportedHandler<Env, BriefAudioJob | BriefPushJob>;
+} satisfies ExportedHandler<Env, BriefAudioJob | BriefPushJob | ExplorationJob>;

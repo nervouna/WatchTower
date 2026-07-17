@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -115,7 +116,11 @@ class BriefView extends StatelessWidget {
             const _EmptyBrief()
           else
             for (final item in brief.items) ...[
-              _BriefItemCard(item: item),
+              _BriefItemCard(
+                item: item,
+                briefDate: brief.date,
+                explorationEnabled: brief.explorationEnabled,
+              ),
               const SizedBox(height: 12),
             ],
         ],
@@ -298,8 +303,14 @@ class _AudioCard extends StatelessWidget {
 }
 
 class _BriefItemCard extends StatelessWidget {
-  const _BriefItemCard({required this.item});
+  const _BriefItemCard({
+    required this.item,
+    required this.briefDate,
+    required this.explorationEnabled,
+  });
   final BriefItem item;
+  final String briefDate;
+  final bool explorationEnabled;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -373,6 +384,17 @@ class _BriefItemCard extends StatelessWidget {
               runSpacing: 8,
               children: [for (final tag in item.tags) _Meta(text: tag)],
             ),
+            if (explorationEnabled) ...[
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => context.push(
+                  '/explorations/$briefDate/${item.entityId}',
+                  extra: item.title,
+                ),
+                icon: const Icon(Icons.manage_search),
+                label: const Text('拓展阅读'),
+              ),
+            ],
             const SizedBox(height: 14),
             Wrap(
               alignment: WrapAlignment.center,

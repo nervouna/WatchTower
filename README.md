@@ -13,6 +13,7 @@ WatchTower 是一份面向开发者和产品从业者的中文科技情报日报
 - 区分完整简报与缺少部分来源的部分简报，并在生成延迟时提示读者。
 - 识别持续出现的项目，说明相对上一期发生了什么实质变化。
 - 提供按日期浏览的历史归档和带游标的公开 JSON API。
+- 可围绕已发布热点按需生成一次带出处的“拓展阅读”，覆盖背景、相关产品、外部观点、行业位置与后续信号。
 - 提供仅限站主使用的反馈模式，可将实体标记为“持续关注”“不相关”或“没意思”，并影响后续候选筛选。
 
 ## 工作方式
@@ -28,11 +29,14 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 
 流水线通过 Tavily 搜索和提取来源内容，每个来源优先保留一组候选，再在总上限内补充高质量结果。DeepSeek 根据候选证据和历史实体生成结构化中文内容；程序会校验字段长度、候选 ID、来源覆盖、连续性和 URL 等约束。第一次结果不合格时只允许一次修复请求。
 
+“拓展阅读”只接受已发布简报中的 `briefDate` 与 `entityId`，不接受自由搜索词。HTTP 请求只负责幂等触发；独立 Cloudflare Queue 依次完成四类 Tavily Advanced Search、最多十页 Advanced Extract 和 DeepSeek 结构化生成。同一实体匿名共享 24 小时缓存，过期时先返回旧结果再异步刷新。D1 以 UTC 日原子预留 credits，默认每日最多预留 120 credits，每个新任务保守预留 12 credits；失败任务不返还预留。
+
 至少三个来源成功时才会发布。四个来源全部成功时状态为 `complete`，否则为 `partial`。同一阶段可安全重试；如果最终生成失败，已有的有效草稿会被保留；如果候选证据没有变化，则不会重复调用模型。
 
 ## 技术栈
 
 - Cloudflare Workers、Cron Triggers 和 Static Assets
+- Cloudflare Queues 与 Rate Limiting bindings
 - Cloudflare D1（SQLite）
 - TypeScript（strict mode）
 - Tavily Search 与 Extract API
@@ -68,6 +72,8 @@ cp .env.example .env
 | `TAVILY_API_KEY` | 搜索和提取四个平台的候选内容。 |
 | `DEEPSEEK_API_KEY` | 生成并修复结构化中文简报。 |
 | `WATCHTOWER_FEEDBACK_TOKEN` | 保护站主反馈 API 和前端反馈模式。 |
+
+探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。默认 `ITEM_EXPLORATION_ENABLED=false`，因此本地或首次生产部署不会暴露入口。
 
 可以使用项目脚本生成高强度随机反馈凭证。脚本会将它写入本地 `.env`，并将文件权限设为仅当前用户可读写：
 
@@ -158,6 +164,18 @@ iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`
 可用反馈值为 `follow`、`irrelevant` 和 `uninteresting`。反馈只能写入确实出现在所声明已发布简报中的实体。反馈响应使用 `Cache-Control: no-store`，也不会开放公共 CORS。
 
 浏览器中的反馈凭证只保存在当前标签页的 `sessionStorage`；退出反馈模式或关闭标签页会清除它。
+
+### 拓展阅读
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/explorations/:briefDate/:entityId` | 幂等触发探索；缓存命中返回 `200`，处理中返回 `202`。 |
+| `GET` | `/api/explorations/:briefDate/:entityId` | 查询已有资源；成功结果支持 `ETag` 与五分钟公共缓存。 |
+| `OPTIONS` | `/api/explorations/:briefDate/:entityId` | 公共 CORS 预检。 |
+
+处理中响应使用 `Cache-Control: no-store` 并提供 `pollAfterSeconds`。匿名触发过快或每日预留额度耗尽时返回 `429` 与 `Retry-After`；已有旧结果时仍返回旧结果并标明刷新受限。模型只能引用服务端提供的 `sourceIds`，不能创建 URL；公开链接全部来自经协议、去重和规范化校验的 Tavily 来源目录。
+
+点击探索会触发服务端检索公开资料。同一实体的结果会匿名共享和缓存。Cloudflare 仅以原始 IP 的临时哈希作为宽松限流键，WatchTower 不把原始 IP 写入数据库或日志。网页片段只用于生成和崩溃恢复，成功后删除；公开接口只返回结构化摘要和原始链接。
 
 ## 数据与部署
 

@@ -57,6 +57,28 @@ class ApiClient {
     );
   }
 
+  Future<ApiResponse> post(String path) async {
+    final response = await _client
+        .post(resolve(path), headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = '请求失败，请稍后重试。';
+      try {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final error = decoded['error'] as Map<String, dynamic>?;
+        if (error?['message'] is String) message = error!['message'] as String;
+      } on FormatException {
+        // Preserve the stable fallback for non-JSON upstream responses.
+      }
+      throw ApiException(message, statusCode: response.statusCode);
+    }
+    return ApiResponse(
+      statusCode: response.statusCode,
+      body: response.body,
+      etag: response.headers['etag'],
+    );
+  }
+
   Future<void> upsertPushSubscription(Map<String, String> payload) async {
     final response = await _client
         .put(

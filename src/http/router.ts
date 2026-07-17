@@ -10,6 +10,7 @@ import {
 } from "../storage/repository";
 import { enqueueBriefAudio } from "../audio/jobs";
 import { handlePushSubscriptionRequest } from "../push/subscriptions";
+import { explorationEnabled, handleExplorationRequest } from "../exploration/http";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -171,7 +172,7 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER">,
+  env: Pick<Env, "DB" | "ASSETS" | "WATCHTOWER_FEEDBACK_TOKEN" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "MIMO_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "ITEM_EXPLORATION_QUEUE" | "EXPLORATION_RATE_LIMITER" | "ITEM_EXPLORATION_ENABLED" | "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS" | "ITEM_EXPLORATION_CREDIT_RESERVATION">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -183,6 +184,10 @@ export async function handleRequest(
     return handleFeedbackRequest(request, env, now);
   }
   if (url.pathname.startsWith("/api/admin/brief-audio/")) return handleAdminAudioRequest(request, env, now);
+  const explorationMatch = /^\/api\/explorations\/([^/]+)\/([^/]+)$/u.exec(url.pathname);
+  if (explorationMatch?.[1] && explorationMatch[2]) {
+    return handleExplorationRequest(request, env, explorationMatch[1], explorationMatch[2], now);
+  }
 
   const audioMatch = /^\/api\/briefs\/([^/]+)\/audio$/u.exec(url.pathname);
   if (audioMatch?.[1]) {
@@ -229,7 +234,7 @@ export async function handleRequest(
   if (url.pathname === "/api/briefs/latest") {
     const brief = await getLatestBrief(env.DB, nowIso);
     return brief
-      ? cachedJson(request, brief, head)
+      ? cachedJson(request, { ...brief, features: { exploration: explorationEnabled(env.ITEM_EXPLORATION_ENABLED) } }, head)
       : apiError("BRIEF_NOT_FOUND", "尚无可用简报。", 404);
   }
 
@@ -260,7 +265,7 @@ export async function handleRequest(
     if (!isValidUtcDate(date)) return apiError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
     const brief = await getBrief(env.DB, date, nowIso);
     return brief
-      ? cachedJson(request, brief, head)
+      ? cachedJson(request, { ...brief, features: { exploration: explorationEnabled(env.ITEM_EXPLORATION_ENABLED) } }, head)
       : apiError("BRIEF_NOT_FOUND", "未找到指定日期的简报。", 404);
   }
 
