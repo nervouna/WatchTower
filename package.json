@@ -14,6 +14,7 @@
     "db:migrate:local": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --env=\"\" --local",
     "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --env=\"\" --remote",
     "allowlist": "node scripts/allowlist.mjs",
+    "cover:enqueue": "node --env-file=.env scripts/enqueue-cover.mjs",
     "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --env=\"\" --secrets-file .env",
     "deploy:dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler-dev.log wrangler deploy --env dev",
     "db:migrate:dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler-dev.log wrangler d1 migrations apply watchtower-daily-brief-dev-db --env dev --remote"

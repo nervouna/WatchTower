@@ -151,6 +151,11 @@ void main() {
                   url: '/api/briefs/2026-07-17/audio',
                   durationSeconds: 180,
                   transcript: '测试逐字稿',
+                  cover: BriefCover(
+                    status: 'ready',
+                    url: '/api/briefs/2026-07-17/cover',
+                    generatedAt: null,
+                  ),
                 ),
               ),
               offline: false,
@@ -160,7 +165,8 @@ void main() {
       ),
     );
 
-    expect(find.text('今天值得关注的技术信号'), findsOneWidget);
+    expect(find.text('今天值得关注的技术信号'), findsNWidgets(2));
+    expect(find.byType(Image), findsOneWidget);
     expect(find.text('音频暂时不可用，文字简报不受影响。'), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
   });

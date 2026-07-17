@@ -5,7 +5,7 @@ import { claimBriefAudio, failBriefAudio, getBriefAudio, queueBriefAudio, readyB
 import { getBrief } from "../storage/repository";
 import type { BriefPayload, NarrationScript } from "../domain/types";
 
-export interface BriefAudioJob { briefDate: string; contentHash: string }
+export interface BriefAudioJob { kind?: "brief-audio"; briefDate: string; contentHash: string }
 export const AUDIO_MODEL = "mimo-v2.5-tts";
 export const AUDIO_VOICE = "冰糖";
 export const NARRATION_PROMPT_VERSION = "narration-v1";
@@ -37,7 +37,7 @@ export async function enqueueBriefAudio(env: Pick<Env, "DB" | "BRIEF_AUDIO_QUEUE
   const status = await queueBriefAudio(env.DB, date, contentHash, now.toISOString());
   if (status === "queued") {
     try {
-      await env.BRIEF_AUDIO_QUEUE.send({ briefDate: date, contentHash } satisfies BriefAudioJob);
+      await env.BRIEF_AUDIO_QUEUE.send({ kind: "brief-audio", briefDate: date, contentHash } satisfies BriefAudioJob);
     } catch (error) {
       await failBriefAudio(env.DB, date, contentHash, "AUDIO_QUEUE_SEND_FAILED", now.toISOString());
       throw error;

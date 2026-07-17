@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchtower/audio/audio_controller.dart';
 import 'package:watchtower/data/api_client.dart';
 import 'package:watchtower/data/brief_repository.dart';
 import 'package:watchtower/data/local_database.dart';
+import 'package:watchtower/models.dart';
 
 BriefRepository _repository() => BriefRepository(
   api: ApiClient(baseUrl: 'https://example.com'),
@@ -10,6 +13,20 @@ BriefRepository _repository() => BriefRepository(
 );
 
 void main() {
+  test('media metadata includes the generated cover artwork URL', () {
+    final brief = Brief.decode(
+      File('../contracts/fixtures/brief-complete.json').readAsStringSync(),
+    );
+    final item = briefMediaItem(
+      brief,
+      Uri.parse('https://example.com/api/briefs/2026-07-17/audio'),
+    );
+    expect(
+      item.artUri,
+      Uri.parse('https://example.com/api/briefs/2026-07-17/cover'),
+    );
+  });
+
   test('audio initialization failure degrades without escaping', () async {
     final controller = AudioController(
       _repository(),

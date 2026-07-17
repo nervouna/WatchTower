@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../audio/audio_controller.dart';
 import '../auth/auth_controller.dart';
+import '../config.dart';
 import '../models.dart';
 import '../theme.dart';
 
@@ -286,6 +287,8 @@ class _AudioCardState extends State<_AudioCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _PodcastCover(brief: brief),
+            const SizedBox(height: 14),
             Text(
               queued || audioInfo.status == 'pending'
                   ? '语音版正在生成，文字简报可以正常阅读。'
@@ -337,18 +340,11 @@ class _AudioCardState extends State<_AudioCard> {
       );
     }
     if (controller.availability != AudioAvailability.ready) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          controller.availability == AudioAvailability.initializing
-              ? '正在准备播放器，文字简报可以正常阅读。'
-              : '音频暂时不可用，文字简报不受影响。',
-          textAlign: TextAlign.center,
-        ),
+      return _AudioUnavailableCard(
+        brief: brief,
+        text: controller.availability == AudioAvailability.initializing
+            ? '正在准备播放器，文字简报可以正常阅读。'
+            : '音频暂时不可用，文字简报不受影响。',
       );
     }
     final active = controller.item?.id == brief.date;
@@ -358,52 +354,202 @@ class _AudioCardState extends State<_AudioCard> {
         color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
         children: [
-          IconButton.filled(
-            onPressed: controller.loading
-                ? null
-                : () => controller.toggle(brief),
-            tooltip: active && controller.playing ? '暂停语音简报' : '播放语音简报',
-            icon: Icon(
-              controller.loading && active
-                  ? Icons.hourglass_top
-                  : active && controller.playing
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  '约 3 分钟听完本期',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          _PodcastCover(brief: brief),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton.filled(
+                onPressed: controller.loading
+                    ? null
+                    : () => controller.toggle(brief),
+                tooltip: active && controller.playing ? '暂停语音简报' : '播放语音简报',
+                icon: Icon(
+                  controller.loading && active
+                      ? Icons.hourglass_top
+                      : active && controller.playing
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  controller.error ??
-                      'AI 语音 · ${_duration(audioInfo.durationSeconds!)}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: controller.error == null
-                        ? Theme.of(context).colorScheme.onSurfaceVariant
-                        : Theme.of(context).colorScheme.error,
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '约 3 分钟听完本期',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      controller.error ??
+                          'AI 语音 · ${_duration(audioInfo.durationSeconds!)}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: controller.error == null
+                            ? Theme.of(context).colorScheme.onSurfaceVariant
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+}
+
+class _AudioUnavailableCard extends StatelessWidget {
+  const _AudioUnavailableCard({required this.brief, required this.text});
+  final Brief brief;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      children: [
+        _PodcastCover(brief: brief),
+        const SizedBox(height: 14),
+        Text(text, textAlign: TextAlign.center),
+      ],
+    ),
+  );
+}
+
+class _PodcastCover extends StatelessWidget {
+  const _PodcastCover({required this.brief});
+  final Brief brief;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = brief.audio?.cover;
+    final ready = cover?.status == 'ready' && cover?.url != null;
+    final imageUrl = ready
+        ? Uri.parse(AppConfig.apiBaseUrl).resolve(cover!.url!).toString()
+        : null;
+    return ExcludeSemantics(
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const _CoverFallback(),
+              if (imageUrl != null)
+                Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  excludeFromSemantics: true,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null ? child : const SizedBox.shrink(),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xE6102026),
+                      Color(0x99102026),
+                      Color(0x33102026),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'WATCHTOWER DAILY',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          brief.date,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      brief.headline,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            height: 1.18,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '每日播客 · AI 语音',
+                      style: TextStyle(
+                        color: Color(0xD9FFFFFF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CoverFallback extends StatelessWidget {
+  const _CoverFallback();
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary,
+      gradient: RadialGradient(
+        center: const Alignment(0.55, -0.5),
+        radius: 0.72,
+        colors: [
+          Theme.of(context).colorScheme.primary,
+          const Color(0xFF18343D),
+        ],
+      ),
+    ),
+  );
 }
 
 class _BriefItemCard extends StatelessWidget {

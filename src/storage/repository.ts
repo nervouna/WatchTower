@@ -2,6 +2,7 @@ import {
   SOURCE_KINDS,
   type BriefListPayload,
   type BriefAudio,
+  type BriefCover,
   type BriefPayload,
   type BriefStatus,
   type Continuity,
@@ -96,6 +97,24 @@ export interface BriefAudioRow {
   provider: string;
   model: string;
   voice: string;
+  prompt_version: string;
+  attempt_count: number;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  generated_at: string | null;
+}
+
+export interface BriefCoverRow {
+  brief_date: string;
+  content_hash: string;
+  status: "pending" | "processing" | "ready" | "failed";
+  object_key: string | null;
+  fal_request_id: string | null;
+  fal_status_url: string | null;
+  fal_response_url: string | null;
+  provider: string;
+  model: string;
   prompt_version: string;
   attempt_count: number;
   error_code: string | null;
@@ -466,7 +485,7 @@ export async function replaceBrief(db: D1Database, draft: BriefDraft): Promise<v
 }
 
 async function hydrateBrief(db: D1Database, row: BriefRow): Promise<BriefPayload> {
-  const audioRow = await getBriefAudio(db, row.brief_date);
+  const [audioRow, coverRow] = await Promise.all([getBriefAudio(db, row.brief_date), getBriefCover(db, row.brief_date)]);
   const itemsResult = await db
     .prepare(
       `SELECT id, rank, entity_id, title, summary, why_it_matters, tags_json,
@@ -523,20 +542,36 @@ async function hydrateBrief(db: D1Database, row: BriefRow): Promise<BriefPayload
       github: sourceItems.get("github")?.size ?? 0,
       kickstarter: sourceItems.get("kickstarter")?.size ?? 0,
     },
-    audio: publicAudio(audioRow),
+    audio: publicAudio(audioRow, coverRow),
     items,
   };
 }
 
-function publicAudio(row: BriefAudioRow | null): BriefAudio | null {
+function publicCover(row: BriefCoverRow | null): BriefCover | null {
   if (!row) return null;
   if (row.status === "pending" || row.status === "processing") return { status: "pending" };
   if (row.status === "failed") return { status: "failed" };
-  if (!row.object_key || row.duration_seconds === null || !row.generated_at || !row.script_json) return { status: "failed" };
+  if (!row.object_key || !row.generated_at) return { status: "failed" };
+  return {
+    status: "ready",
+    url: `/api/briefs/${row.brief_date}/cover`,
+    generatedAt: row.generated_at,
+    provider: "fal-ai",
+    model: "fal-ai/recraft/v3/text-to-image",
+    synthetic: true,
+  };
+}
+
+function publicAudio(row: BriefAudioRow | null, coverRow: BriefCoverRow | null): BriefAudio | null {
+  if (!row) return null;
+  const cover = publicCover(coverRow);
+  if (row.status === "pending" || row.status === "processing") return { status: "pending", cover };
+  if (row.status === "failed") return { status: "failed", cover };
+  if (!row.object_key || row.duration_seconds === null || !row.generated_at || !row.script_json) return { status: "failed", cover };
   let script: { opening_zh: string; items: Array<{ text_zh: string }>; closing_zh: string };
   try {
     const parsed: unknown = JSON.parse(row.script_json);
-    if (typeof parsed !== "object" || parsed === null) return { status: "failed" };
+    if (typeof parsed !== "object" || parsed === null) return { status: "failed", cover };
     const opening = Reflect.get(parsed, "opening_zh") as unknown;
     const closing = Reflect.get(parsed, "closing_zh") as unknown;
     const rawItems = Reflect.get(parsed, "items") as unknown;
@@ -546,10 +581,10 @@ function publicAudio(row: BriefAudioRow | null): BriefAudio | null {
         if (typeof item !== "object" || item === null) return false;
         return typeof (Reflect.get(item, "text_zh") as unknown) === "string";
       })
-    ) return { status: "failed" };
+    ) return { status: "failed", cover };
     script = { opening_zh: opening, closing_zh: closing, items: rawItems as Array<{ text_zh: string }> };
   } catch {
-    return { status: "failed" };
+    return { status: "failed", cover };
   }
   return {
     status: "ready",
@@ -559,7 +594,61 @@ function publicAudio(row: BriefAudioRow | null): BriefAudio | null {
     transcript: [script.opening_zh, ...script.items.map((item) => item.text_zh), script.closing_zh].join("\n\n"),
     provider: "xiaomi-mimo",
     synthetic: true,
+    cover,
   };
+}
+
+export async function getBriefCover(db: D1Database, date: string): Promise<BriefCoverRow | null> {
+  return db.prepare("SELECT * FROM brief_covers WHERE brief_date = ?").bind(date).first<BriefCoverRow>();
+}
+
+export async function queueBriefCover(db: D1Database, date: string, contentHash: string, now: string): Promise<"queued" | "already-pending" | "already-ready"> {
+  const current = await getBriefCover(db, date);
+  if (current?.content_hash === contentHash && current.status === "ready") return "already-ready";
+  if (current?.content_hash === contentHash && (current.status === "pending" || current.status === "processing")) return "already-pending";
+  await db.prepare(
+    `INSERT INTO brief_covers (brief_date, content_hash, status, provider, model, prompt_version, created_at, updated_at)
+     VALUES (?, ?, 'pending', 'fal-ai', 'fal-ai/recraft/v3/text-to-image', 'podcast-cover-v1', ?, ?)
+     ON CONFLICT(brief_date) DO UPDATE SET content_hash = excluded.content_hash, status = 'pending',
+       fal_request_id = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_request_id ELSE NULL END,
+       fal_status_url = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_status_url ELSE NULL END,
+       fal_response_url = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_response_url ELSE NULL END,
+       object_key = brief_covers.object_key, error_code = NULL, updated_at = excluded.updated_at,
+       generated_at = brief_covers.generated_at`
+  ).bind(date, contentHash, now, now).run();
+  return "queued";
+}
+
+export async function claimBriefCover(db: D1Database, date: string, contentHash: string, now: string, recoverProcessing = false): Promise<BriefCoverRow | null> {
+  const result = await db.prepare(
+    `UPDATE brief_covers SET status = 'processing', attempt_count = attempt_count + 1, updated_at = ?, error_code = NULL
+     WHERE brief_date = ? AND content_hash = ? AND (status IN ('pending', 'failed') OR (status = 'processing' AND ? = 1))`
+  ).bind(now, date, contentHash, recoverProcessing ? 1 : 0).run();
+  return result.meta.changes > 0 ? getBriefCover(db, date) : null;
+}
+
+export async function saveBriefCoverRequest(
+  db: D1Database,
+  date: string,
+  contentHash: string,
+  request: { requestId: string; statusUrl: string; responseUrl: string },
+  now: string,
+): Promise<void> {
+  await db.prepare(
+    "UPDATE brief_covers SET fal_request_id = ?, fal_status_url = ?, fal_response_url = ?, updated_at = ? WHERE brief_date = ? AND content_hash = ?",
+  ).bind(request.requestId, request.statusUrl, request.responseUrl, now, date, contentHash).run();
+}
+
+export async function readyBriefCover(db: D1Database, date: string, contentHash: string, objectKey: string, generatedAt: string): Promise<void> {
+  await db.prepare(
+    `UPDATE brief_covers SET status = 'ready', object_key = ?, generated_at = ?, updated_at = ?, error_code = NULL
+     WHERE brief_date = ? AND content_hash = ?`
+  ).bind(objectKey, generatedAt, generatedAt, date, contentHash).run();
+}
+
+export async function failBriefCover(db: D1Database, date: string, contentHash: string, errorCode: string, now: string): Promise<void> {
+  await db.prepare("UPDATE brief_covers SET status = 'failed', error_code = ?, updated_at = ? WHERE brief_date = ? AND content_hash = ?")
+    .bind(errorCode, now, date, contentHash).run();
 }
 
 export async function getBriefAudio(db: D1Database, date: string): Promise<BriefAudioRow | null> {

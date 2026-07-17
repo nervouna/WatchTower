@@ -210,19 +210,48 @@ function formatDuration(seconds) {
   return `${Math.floor(rounded / 60)} 分 ${String(rounded % 60).padStart(2, "0")} 秒`;
 }
 
-function renderBriefAudio(audio, briefDate) {
+function renderPodcastCover(cover, brief) {
+  const wrapper = element("div", `podcast-cover podcast-cover-${cover?.status ?? "missing"}`);
+  wrapper.setAttribute("aria-hidden", "true");
+  if (cover?.status === "ready") {
+    const image = element("img", "podcast-cover-image");
+    image.src = cover.url;
+    image.alt = "";
+    image.decoding = "async";
+    image.addEventListener("error", () => {
+      image.remove();
+      wrapper.classList.add("podcast-cover-fallback");
+    });
+    wrapper.append(image);
+  } else {
+    wrapper.classList.add("podcast-cover-fallback");
+  }
+  const overlay = element("div", "podcast-cover-overlay");
+  const meta = element("div", "podcast-cover-meta");
+  meta.append(element("span", "podcast-cover-brand", "WATCHTOWER DAILY"), element("span", "podcast-cover-date", brief.date));
+  overlay.append(meta, element("h3", "podcast-cover-title", brief.headline), element("span", "podcast-cover-format", "每日播客 · AI 语音"));
+  wrapper.append(overlay);
+  return wrapper;
+}
+
+function renderBriefAudio(audio, brief) {
   if (!audio) return null;
   const section = element("section", `brief-audio brief-audio-${audio.status}`);
   section.setAttribute("aria-label", "本期语音简报");
+  const layout = element("div", "audio-layout");
+  layout.append(renderPodcastCover(audio.cover, brief));
+  const content = element("div", "audio-content");
   const heading = element("div", "audio-heading");
   heading.append(element("h2", "audio-title", "约 3 分钟听完本期"), element("span", "audio-ai-label", "AI 语音，由小米 MiMo 合成"));
-  section.append(heading);
+  content.append(heading);
   if (audio.status === "pending") {
-    section.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));
+    content.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));
+    layout.append(content);
+    section.append(layout);
     return section;
   }
   if (audio.status === "failed") {
-    section.append(element("p", "audio-state-copy", "语音版暂时不可用，文字简报不受影响。"));
+    content.append(element("p", "audio-state-copy", "语音版暂时不可用，文字简报不受影响。"));
     if (capabilities.audioRetry) {
       const retry = element("button", "dialog-button dialog-button-secondary", "重新生成语音");
       retry.type = "button";
@@ -230,15 +259,17 @@ function renderBriefAudio(audio, briefDate) {
         retry.disabled = true;
         retry.textContent = "正在提交…";
         try {
-          await feedbackApi(`/api/briefs/${briefDate}/audio/retry`, { method: "POST" });
+          await feedbackApi(`/api/briefs/${brief.date}/audio/retry`, { method: "POST" });
           retry.textContent = "语音正在重新生成";
         } catch {
           retry.disabled = false;
           retry.textContent = "提交失败，请重试";
         }
       });
-      section.append(retry);
+      content.append(retry);
     }
+    layout.append(content);
+    section.append(layout);
     return section;
   }
   const player = element("audio", "audio-player");
@@ -257,7 +288,9 @@ function renderBriefAudio(audio, briefDate) {
   });
   const transcript = element("details", "audio-transcript");
   transcript.append(element("summary", "transcript-summary", "查看逐字稿"), element("p", "transcript-copy", audio.transcript));
-  section.append(player, status, transcript);
+  content.append(player, status, transcript);
+  layout.append(content);
+  section.append(layout);
   return section;
 }
 
@@ -288,7 +321,7 @@ async function renderBrief(brief, isLatest) {
     element("span", "meta-item", `${brief.items.length} 条热点`),
   );
   hero.append(metadata);
-  const audio = renderBriefAudio(brief.audio, brief.date);
+  const audio = renderBriefAudio(brief.audio, brief);
   if (audio) hero.append(audio);
   const coverage = element("dl", "coverage");
   for (const [source, name] of Object.entries(sourceNames)) {

@@ -68,6 +68,7 @@
   ],
   "vars": {
     "BRIEF_AUDIO_ENABLED": "true",
+    "BRIEF_COVER_ENABLED": "true",
     "AUTH0_ISSUER": "https://auth.watchtower.damao.io/",
     "AUTH0_TENANT_DOMAIN": "dev-to70scnda2czaona.us.auth0.com",
     "AUTH0_AUDIENCE": "https://watchtower.damao.io/api",
@@ -82,6 +83,7 @@
       "AUTH0_MANAGEMENT_CLIENT_ID",
       "AUTH0_MANAGEMENT_CLIENT_SECRET",
       "MIMO_API_KEY",
+      "FAL_API_KEY",
       "APNS_TEAM_ID",
       "APNS_SANDBOX_KEY_ID",
       "APNS_SANDBOX_PRIVATE_KEY",
@@ -144,13 +146,26 @@
       ],
       "vars": {
         "BRIEF_AUDIO_ENABLED": "false",
+        "BRIEF_COVER_ENABLED": "false",
         "AUTH0_ISSUER": "https://auth.watchtower.damao.io/",
         "AUTH0_TENANT_DOMAIN": "dev-to70scnda2czaona.us.auth0.com",
         "AUTH0_AUDIENCE": "https://watchtower.damao.io/api",
         "AUTH0_WEB_CLIENT_ID": "xk9v7BQhHNo4Us27srWAifkxIZTtHPhL",
         "AUTH0_MOBILE_DEV_CLIENT_ID": "xVjFpJiKSjIgwf6we3IJ2V4ciQUIRvAU",
         "AUTH0_MOBILE_PROD_CLIENT_ID": "qdjaZq0j2lxZxcbSsPOqx8VKU6irFLKt",
-        "MIMO_API_KEY": ""
+        "TAVILY_API_KEY": "",
+        "DEEPSEEK_API_KEY": "",
+        "AUTH0_MANAGEMENT_CLIENT_ID": "",
+        "AUTH0_MANAGEMENT_CLIENT_SECRET": "",
+        "MIMO_API_KEY": "",
+        "FAL_API_KEY": "",
+        "APNS_TEAM_ID": "",
+        "APNS_SANDBOX_KEY_ID": "",
+        "APNS_SANDBOX_PRIVATE_KEY": "",
+        "APNS_PRODUCTION_KEY_ID": "",
+        "APNS_PRODUCTION_PRIVATE_KEY": "",
+        "PUSH_TOKEN_ENCRYPTION_KEY": "",
+        "PUSH_TOKEN_HMAC_KEY": ""
       },
       "secrets": {
         "required": []

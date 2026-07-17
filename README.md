@@ -14,6 +14,7 @@ WatchTower 是一份面向开发者和产品从业者的中文科技情报日报
 - 识别持续出现的项目，说明相对上一期发生了什么实质变化。
 - 提供按日期浏览的历史归档和带游标的公开 JSON API。
 - 公开阅读无需登录；白名单账号可通过 Sign in with Apple 进入反馈模式，将实体标记为“持续关注”“不相关”或“没意思”，并重试失败的语音生成。
+- 为每日语音简报异步生成 AI 播客封面，并在网页、App 和系统媒体播放器中展示；封面失败不影响文字或音频。
 
 ## 工作方式
 
@@ -37,6 +38,7 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 - TypeScript（strict mode）
 - Tavily Search 与 Extract API
 - DeepSeek Chat Completions API
+- 小米 MiMo TTS 与 fal.ai Recraft V3
 - 原生 HTML、CSS 和 JavaScript 前端
 - Flutter iOS/Android 阅读客户端（`mobile/`）
 - Vitest 与 Cloudflare Workers 测试池
@@ -69,6 +71,8 @@ cp .env.example .env
 | `DEEPSEEK_API_KEY` | 生成并修复结构化中文简报。 |
 | `AUTH0_MANAGEMENT_CLIENT_ID` | 账号删除专用 M2M 应用的 client ID。 |
 | `AUTH0_MANAGEMENT_CLIENT_SECRET` | 账号删除专用 M2M 应用的 secret。 |
+| `MIMO_API_KEY` | 合成每日语音简报。 |
+| `FAL_API_KEY` | 通过 fal.ai Recraft V3 生成每日播客封面。 |
 
 Auth0 issuer、audience、tenant domain 和三个公开 client ID 配置在 `wrangler.jsonc`。这些值不是秘密；Apple private key 只保存在 Apple/Auth0 配置中，不进入仓库或 Worker。
 
@@ -104,11 +108,14 @@ npm run dev
 | `npm run allowlist -- list [--remote\|--dev]` | 列出本地、生产远程或隔离 Dev D1 白名单。 |
 | `npm run allowlist -- add <user-id> [--note <text>] [--remote\|--dev]` | 添加或更新白名单记录；默认仅操作本地 D1。 |
 | `npm run allowlist -- remove <user-id> [--remote\|--dev]` | 移除白名单权限；默认仅操作本地 D1。 |
+| `npm run cover:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排播客封面任务。 |
 | `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
 | `npm run deploy:dev` | 部署隔离的 `watchtower-daily-brief-dev` Worker 到 `dev.watchtower.damao.io`。 |
 | `npm run db:migrate:dev` | 显式应用 Dev D1 migrations；不会修改生产 D1。 |
 
 白名单命令使用 `--remote` 明确选择生产 D1，或使用 `--dev` 明确选择隔离的远程 Dev D1；两个参数不能同时使用。
+
+`cover:enqueue` 调用 Auth0 白名单保护的补排接口。运行时通过当前 shell 临时提供有效 access token，例如 `WATCHTOWER_AUTH_TOKEN=... npm run cover:enqueue -- 2026-07-18`；不要将短期 token 写入仓库。
 
 ## 移动客户端
 
@@ -154,6 +161,8 @@ iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`
 | `GET`, `HEAD` | `/api/briefs/latest` | 获取当前已发布的最新简报。 |
 | `GET`, `HEAD` | `/api/briefs/:date` | 获取指定日期的已发布简报。 |
 | `GET`, `HEAD` | `/api/briefs?limit=20&cursor=...` | 按日期倒序获取简报摘要；`limit` 范围为 1–100。 |
+| `GET`, `HEAD` | `/api/briefs/:date/audio` | 获取支持 Range 的已生成 WAV 语音。 |
+| `GET`, `HEAD` | `/api/briefs/:date/cover` | 获取已生成的播客封面图片。 |
 
 公开接口返回 JSON，允许跨域读取，并使用 `ETag`、五分钟公共缓存和 `stale-while-revalidate`。尚未到 `publishAt` 的简报不会被公开查询。
 

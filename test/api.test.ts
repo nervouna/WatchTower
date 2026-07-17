@@ -66,9 +66,10 @@ describe("public API", () => {
   beforeEach(async () => {
     deletedManagementUrl = null;
     managementDeleteStatus = 204;
-    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
     await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)").bind("apple|allowed-user", now.toISOString()).run();
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
+    await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.cover");
   });
 
   it("returns latest published brief with public caching, CORS, and ETag", async () => {
@@ -189,11 +190,43 @@ describe("public API", () => {
     expect(cached.status).toBe(304);
   });
 
+  it("serves a ready cover with HEAD, ETag, CORS, and nosniff", async () => {
+    await replaceBrief(env.DB, draft());
+    const bytes = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
+    await env.BRIEF_AUDIO.put("briefs/2026-07-16/hash.cover", bytes, { httpMetadata: { contentType: "image/webp" } });
+    await env.DB.prepare(
+      `INSERT INTO brief_covers (brief_date, content_hash, status, object_key, provider, model, prompt_version, attempt_count, created_at, updated_at, generated_at)
+       VALUES (?, ?, 'ready', ?, 'fal-ai', 'fal-ai/recraft/v3/text-to-image', 'podcast-cover-v1', 1, ?, ?, ?)`
+    ).bind("2026-07-16", "hash", "briefs/2026-07-16/hash.cover", now.toISOString(), now.toISOString(), now.toISOString()).run();
+    const full = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/cover"), env, now);
+    expect(full.status).toBe(200);
+    expect(full.headers.get("Content-Type")).toBe("image/webp");
+    expect(full.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(full.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(new Uint8Array(await full.arrayBuffer())).toEqual(bytes);
+    const head = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/cover", { method: "HEAD" }), env, now);
+    expect(head.headers.get("Content-Length")).toBe(String(bytes.byteLength));
+    const cached = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/cover", { headers: { "If-None-Match": head.headers.get("ETag")! } }), env, now);
+    expect(cached.status).toBe(304);
+  });
+
   it("protects and idempotently queues audio retry without public CORS", async () => {
     await replaceBrief(env.DB, draft());
     const unauthorized = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio/retry", { method: "POST" }), env, now);
     expect(unauthorized.status).toBe(401);
     const request = () => new Request("https://example.com/api/briefs/2026-07-16/audio/retry", { method: "POST", headers: authHeader });
+    const queued = await handleRequest(request(), env, now);
+    expect(await queued.json()).toMatchObject({ briefDate: "2026-07-16", status: "queued" });
+    expect(queued.headers.get("Cache-Control")).toBe("no-store");
+    expect(queued.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(await (await handleRequest(request(), env, now)).json()).toMatchObject({ status: "already-pending" });
+  });
+
+  it("protects and idempotently queues cover retry without public CORS", async () => {
+    await replaceBrief(env.DB, draft());
+    const unauthorized = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/cover/retry", { method: "POST" }), env, now);
+    expect(unauthorized.status).toBe(401);
+    const request = () => new Request("https://example.com/api/briefs/2026-07-16/cover/retry", { method: "POST", headers: authHeader });
     const queued = await handleRequest(request(), env, now);
     expect(await queued.json()).toMatchObject({ briefDate: "2026-07-16", status: "queued" });
     expect(queued.headers.get("Cache-Control")).toBe("no-store");

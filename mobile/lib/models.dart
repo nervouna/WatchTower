@@ -139,6 +139,7 @@ class BriefAudio {
     this.url,
     this.durationSeconds,
     this.transcript,
+    this.cover,
   });
 
   factory BriefAudio.fromJson(Object? value) {
@@ -147,7 +148,10 @@ class BriefAudio {
     if (!const {'pending', 'failed', 'ready'}.contains(status)) {
       return _invalid('audio.status');
     }
-    if (status != 'ready') return BriefAudio(status: status);
+    final cover = json['cover'] == null
+        ? null
+        : BriefCover.fromJson(json['cover']);
+    if (status != 'ready') return BriefAudio(status: status, cover: cover);
     final duration = json['durationSeconds'];
     final url = json['url'];
     final transcript = json['transcript'];
@@ -159,6 +163,7 @@ class BriefAudio {
       url: url,
       durationSeconds: duration.toDouble(),
       transcript: transcript,
+      cover: cover,
     );
   }
 
@@ -166,6 +171,34 @@ class BriefAudio {
   final String? url;
   final double? durationSeconds;
   final String? transcript;
+  final BriefCover? cover;
+}
+
+class BriefCover {
+  const BriefCover({required this.status, this.url, this.generatedAt});
+
+  factory BriefCover.fromJson(Object? value) {
+    final json = _map(value, 'cover');
+    final status = _string(json, 'status');
+    if (!const {'pending', 'failed', 'ready'}.contains(status)) {
+      return _invalid('cover.status');
+    }
+    if (status != 'ready') return BriefCover(status: status);
+    final url = json['url'];
+    final generatedAt = json['generatedAt'];
+    if (url is! String || generatedAt is! String) {
+      return _invalid('cover.ready');
+    }
+    return BriefCover(
+      status: status,
+      url: url,
+      generatedAt: DateTime.parse(generatedAt),
+    );
+  }
+
+  final String status;
+  final String? url;
+  final DateTime? generatedAt;
 }
 
 class Brief {
