@@ -21,7 +21,9 @@ WatchTower is a Chinese daily technology/product intelligence brief with a stric
 
 - Use a dedicated worktree under `.worktrees/` when work needs a branch; do not switch the primary working tree by default.
 - Inspect affected implementation, tests, metadata, configuration, and migrations. For automatable non-trivial production logic, start with a failing test, implement the minimum change, then refactor.
+- Count a source as successful only when it yields usable normalized candidates, and never persist or publish a generated brief with zero items.
 - Keep interfaces and types explicit, use generated `Env` bindings, and update affected tests.
+- Treat `public/` as deployable bytes. Keep repository-only metadata, including `public/AGENTS.md`, excluded through `public/.assetsignore`, and verify the exclusion against production after asset changes.
 - Never edit an applied migration. Treat remote migrations, deploys, and Cloudflare configuration as production mutations requiring explicit authorization and verification of the account, database, route, and hostname.
 - Review the scoped diff before committing for correctness, avoidable complexity, unrelated churn, verification gaps, and secret exposure.
 - Do not commit, push, open a pull request, migrate remote data, or deploy unless explicitly requested.
