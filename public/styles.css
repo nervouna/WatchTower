@@ -767,25 +767,6 @@ button:focus-visible,
   color: var(--text-secondary);
 }
 
-.feedback-token-label {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.feedback-token-input {
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
 .feedback-auth-error {
   margin: 8px 0 0;
   font-size: 14px;
@@ -793,6 +774,7 @@ button:focus-visible,
 
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
@@ -811,6 +793,22 @@ button:focus-visible,
 .dialog-button-primary {
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.dialog-button-danger {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  background: transparent;
+}
+
+.account-user-id {
+  margin: 12px 0;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
 }
 
 .dialog-button:disabled {

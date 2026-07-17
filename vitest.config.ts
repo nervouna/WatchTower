@@ -11,7 +11,14 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
-          WATCHTOWER_FEEDBACK_TOKEN: "test-feedback-token",
+          AUTH0_ISSUER: "https://auth.test.invalid/",
+          AUTH0_TENANT_DOMAIN: "tenant.test.invalid",
+          AUTH0_AUDIENCE: "https://watchtower.damao.io/api",
+          AUTH0_WEB_CLIENT_ID: "test-web-client",
+          AUTH0_MOBILE_DEV_CLIENT_ID: "test-mobile-dev-client",
+          AUTH0_MOBILE_PROD_CLIENT_ID: "test-mobile-prod-client",
+          AUTH0_MANAGEMENT_CLIENT_ID: "test-management-client",
+          AUTH0_MANAGEMENT_CLIENT_SECRET: "test-management-secret",
           MIMO_API_KEY: process.env.MIMO_API_KEY ?? "test-mimo-key",
           RUN_AUDIO_E2E: process.env.RUN_AUDIO_E2E ?? "false",
           APNS_TEAM_ID: "test-team-id",

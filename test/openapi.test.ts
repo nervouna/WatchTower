@@ -9,6 +9,14 @@ function between(value: string, start: string, end: string): string {
 }
 
 describe("checked-in OpenAPI contract", () => {
+  it("documents Auth0 security, account APIs, allowlist failures, and audio retry", () => {
+    expect(contract).toContain("auth0:");
+    for (const path of ["/api/auth/config", "/api/auth/me", "/api/auth/account", "/api/feedback", "/api/feedback/{entityId}", "/api/briefs/{date}/audio/retry"]) {
+      expect(contract).toContain(`  ${path}:`);
+    }
+    for (const status of ["'401'", "'403'", "'502'", "'503'"]) expect(contract).toContain(status);
+    expect(contract).toContain("const: no-store");
+  });
   it("documents the runtime push subscription app and environment contract", () => {
     const schema = between(contract, "    PushSubscription:\n", "    ApiError:\n");
     expect(schema).toMatch(/required: \[[^\]]*appId[^\]]*\]/u);

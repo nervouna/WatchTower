@@ -46,6 +46,7 @@ dependencies:
   url_launcher: ^6.3.2
   provider: ^6.1.5+1
   package_info_plus: ^10.2.1
+  auth0_flutter: 2.4.0
 
 dev_dependencies:
   flutter_test:

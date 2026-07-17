@@ -6,5 +6,9 @@
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>keychain-access-groups</key>
 	<array/>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:auth.watchtower.damao.io</string>
+	</array>
 </dict>
 </plist>

@@ -10,6 +10,7 @@
     <link rel="shortcut icon" href="/favicon.ico">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
     <link rel="stylesheet" href="/styles.css">
+    <script src="https://cdn.auth0.com/js/auth0-spa-js/2.4.0/auth0-spa-js.production.js" integrity="sha384-4HtInVsou9+RJEQ0/2RM/578MlMOAPmcjvvNLiS1qzwk6wFIvU9ZHcF/QvP1sX92" crossorigin="anonymous" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -47,18 +48,20 @@
       </div>
     </footer>
     <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-dialog-title">
-      <form id="feedback-form" method="dialog">
-        <p class="eyebrow">EDITOR ACCESS</p>
-        <h2 id="feedback-dialog-title" class="dialog-title">进入反馈模式</h2>
-        <p class="dialog-copy">输入站主凭证后，便可标记哪些内容值得继续跟进。</p>
-        <label class="feedback-token-label" for="feedback-token">反馈凭证</label>
-        <input id="feedback-token" class="feedback-token-input" name="token" type="password" autocomplete="current-password" required>
+      <div id="feedback-form">
+        <p class="eyebrow">ACCOUNT</p>
+        <h2 id="feedback-dialog-title" class="dialog-title">账号与反馈模式</h2>
+        <p id="feedback-account-copy" class="dialog-copy">使用 Apple 登录后可查看账号状态。阅读始终无需登录。</p>
+        <p id="feedback-user-id" class="account-user-id" hidden></p>
         <p id="feedback-auth-error" class="feedback-auth-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button class="dialog-button dialog-button-secondary" type="button" data-dialog-cancel>取消</button>
-          <button class="dialog-button dialog-button-primary" type="submit">解锁</button>
+          <button id="copy-user-id" class="dialog-button dialog-button-secondary" type="button" hidden>复制 user ID</button>
+          <button id="logout-button" class="dialog-button dialog-button-secondary" type="button" hidden>退出登录</button>
+          <button id="delete-account-button" class="dialog-button dialog-button-danger" type="button" hidden>删除账号</button>
+          <button id="login-button" class="dialog-button dialog-button-primary" type="button">使用 Apple 登录</button>
         </div>
-      </form>
+      </div>
     </dialog>
   </body>
 </html>

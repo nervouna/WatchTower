@@ -31,7 +31,6 @@ export default tseslint.config(
         Headers: "readonly",
         Map: "readonly",
         queueMicrotask: "readonly",
-        sessionStorage: "readonly",
         window: "readonly",
       },
       parserOptions: { projectService: false },

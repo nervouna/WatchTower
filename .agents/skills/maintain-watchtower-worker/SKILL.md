@@ -1,6 +1,6 @@
 ---
 name: maintain-watchtower-worker
-description: Maintain WatchTower's Cloudflare Worker contracts across ingestion, sources, schedules, DeepSeek validation, D1 persistence, public and feedback APIs, migrations, audio and push pipelines, Wrangler configuration, and related tests. Use for any runtime, API, data, storage, infrastructure, or production-behavior change under src/, migrations/, test/, scripts/, public/, mobile/, or wrangler.jsonc.
+description: Maintain WatchTower's Cloudflare Worker contracts across ingestion, sources, schedules, DeepSeek validation, D1 persistence, Auth0 and allowlisted APIs, migrations, audio and push pipelines, Wrangler configuration, and related tests. Use for any runtime, API, data, storage, infrastructure, or production-behavior change under src/, migrations/, test/, scripts/, public/, mobile/, or wrangler.jsonc.
 ---
 
 # Maintain WatchTower Worker
@@ -13,6 +13,7 @@ Inspect the affected code and its consumers before changing behavior:
 - `src/http/router.ts` owns static asset dispatch, public brief APIs, authenticated feedback APIs, caching, and validation.
 - `src/ingestion/` owns Tavily search/extraction, retries, URL normalization, candidate selection, and the scheduled pipeline.
 - `src/domain/` owns shared types, cron resolution, DeepSeek integration, and untrusted model-output validation.
+- `src/auth/` owns Auth0 access-token validation and the boundary between invalid credentials and unavailable authentication infrastructure.
 - `src/storage/repository.ts` owns D1 persistence and public payload hydration.
 - `src/audio/` and `src/push/` integrate R2, queues, narration, APNs, and mobile-facing state.
 - `wrangler.jsonc` is authoritative for bindings, assets, required secrets, triggers, observability, queues, rate limits, and production routing.
@@ -36,7 +37,10 @@ Inspect the affected code and its consumers before changing behavior:
 - Await, return, deliberately void, or hand every Promise to the appropriate Worker lifecycle mechanism. Keep explicit error handling and structured scheduled-run logs.
 - Keep public brief endpoints read-only `GET`/`HEAD` APIs with CORS, ETags, public cache headers, strict UTC date validation, stable error envelopes, and the `1..100` list limit.
 - Never expose unpublished briefs; enforce `publish_at <= now` in repository reads.
-- Require the configured Bearer token for feedback endpoints, compare it timing-safely, return `Cache-Control: no-store`, and intentionally omit public CORS.
+- Preserve anonymous reading even when authentication initialization, Auth0, or JWKS is unavailable.
+- Authenticate protected endpoints with an Auth0 RS256 access token. Strictly validate signature, issuer, audience, authorized party, expiration, issued-at time, and a non-empty subject, then derive feedback and audio-retry capabilities from the D1 allowlist.
+- Return `401` for missing or invalid credentials, `403` for an authenticated user without the required capability, and retryable `503` for unavailable Auth0 or JWKS infrastructure. Return `Cache-Control: no-store` and intentionally omit public CORS on every protected response.
+- Derive account deletion targets only from the verified token subject. Never accept a client-selected user ID or reintroduce a shared fixed credential.
 - Accept feedback only for a valid entity in the claimed published brief. Keep `follow`, `irrelevant`, and `uninteresting` synchronized across types, storage, router, frontend, migrations, and tests.
 - Keep audio artifacts in R2 and asynchronous audio/push work on the configured queues. Preserve queue retry behavior, APNs environment/topic matching, registration security, and public payload compatibility.
 
@@ -48,4 +52,4 @@ Inspect the affected code and its consumers before changing behavior:
 
 ## Verify the contract
 
-Add or update focused tests first for non-trivial production behavior. Cover affected API semantics, validation failures, idempotence, publication thresholds, unchanged-evidence behavior, feedback ordering, storage visibility, migrations, queue retries, audio, or push behavior. Then run the root repository verification gate and review the scoped diff for contract drift and secret exposure.
+Add or update focused tests first for non-trivial production behavior. Cover affected API semantics, authentication and authorization failures, idempotence, publication thresholds, unchanged-evidence behavior, feedback ordering and audit identity, account deletion, storage visibility, migrations, queue retries, audio, or push behavior. Then run the root repository verification gate and review the scoped diff for contract drift and secret exposure.

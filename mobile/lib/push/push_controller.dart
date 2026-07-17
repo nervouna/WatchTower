@@ -30,6 +30,7 @@ class PushController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> initialize() async {
     if (_initializing) return;
     _initializing = true;
+    error = null;
     try {
       final supported =
           await _channel.invokeMethod<bool>('isSupported') ?? false;
@@ -48,6 +49,8 @@ class PushController extends ChangeNotifier with WidgetsBindingObserver {
       if (status == PushStatus.authorized) await _syncCurrentToken();
     } on MissingPluginException {
       status = PushStatus.unsupported;
+    } catch (_) {
+      error = '暂时无法同步通知，稍后会自动重试。';
     } finally {
       _initializing = false;
       notifyListeners();

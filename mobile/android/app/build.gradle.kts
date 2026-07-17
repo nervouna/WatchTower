@@ -22,6 +22,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["auth0Domain"] = "auth.watchtower.damao.io"
+        manifestPlaceholders["auth0Scheme"] = "https"
     }
 
     buildTypes {

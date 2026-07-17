@@ -4,27 +4,31 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler dev --test-scheduled",
+    "dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler dev --env=\"\" --test-scheduled",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log vitest run",
     "test:watch": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log vitest",
-    "build": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --dry-run --outdir dist",
-    "cf-typegen": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler types",
-    "db:migrate:local": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --local",
-    "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --remote",
-    "feedback:setup": "node scripts/setup-feedback-token.mjs",
-    "audio:enqueue": "node --env-file=.env scripts/enqueue-audio.mjs",
-    "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --secrets-file .env"
+    "build": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --env=\"\" --dry-run --outdir dist",
+    "cf-typegen": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler types --env=\"\"",
+    "db:migrate:local": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --env=\"\" --local",
+    "db:migrate:remote": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler d1 migrations apply DB --env=\"\" --remote",
+    "allowlist": "node scripts/allowlist.mjs",
+    "deploy": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler.log wrangler deploy --env=\"\" --secrets-file .env",
+    "deploy:dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler-dev.log wrangler deploy --env dev",
+    "db:migrate:dev": "WRANGLER_LOG_PATH=/tmp/watchtower-wrangler-dev.log wrangler d1 migrations apply watchtower-daily-brief-dev-db --env dev --remote"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "latest",
-    "@types/node": "latest",
     "@eslint/js": "latest",
+    "@types/node": "latest",
     "eslint": "latest",
     "typescript": "latest",
     "typescript-eslint": "latest",
     "vitest": "^4.1.0",
     "wrangler": "latest"
+  },
+  "dependencies": {
+    "jose": "6.1.2"
   }
 }

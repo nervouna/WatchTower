@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleRequest } from "../src/http/router";
 import { replaceBrief, type BriefDraft } from "../src/storage/repository";
@@ -30,10 +31,43 @@ function draft(date = "2026-07-16"): BriefDraft {
 }
 
 const now = new Date("2026-07-16T01:00:00.000Z");
+let authHeader: { Authorization: string };
+let deletedManagementUrl: string | null = null;
+let managementDeleteStatus = 204;
+
+beforeAll(async () => {
+  const pair = await generateKeyPair("RS256", { extractable: true });
+  const jwk = await exportJWK(pair.publicKey);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url === "https://auth.test.invalid/.well-known/jwks.json") {
+      return new Response(JSON.stringify({ keys: [{ ...jwk, kid: "api-test", alg: "RS256", use: "sig" }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url === "https://tenant.test.invalid/oauth/token") return Response.json({ access_token: "management-token" });
+    if (url.startsWith("https://tenant.test.invalid/api/v2/users/")) {
+      deletedManagementUrl = url;
+      return new Response(null, { status: managementDeleteStatus });
+    }
+    throw new TypeError(`Unexpected fetch: ${url}`);
+  });
+  const epoch = Math.floor(Date.now() / 1000);
+  const token = await new SignJWT({ azp: "test-web-client" })
+    .setProtectedHeader({ alg: "RS256", kid: "api-test" })
+    .setIssuer("https://auth.test.invalid/")
+    .setAudience("https://watchtower.damao.io/api")
+    .setSubject("apple|allowed-user")
+    .setIssuedAt(epoch)
+    .setExpirationTime(epoch + 3600)
+    .sign(pair.privateKey);
+  authHeader = { Authorization: `Bearer ${token}` };
+});
 
 describe("public API", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    deletedManagementUrl = null;
+    managementDeleteStatus = 204;
+    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)").bind("apple|allowed-user", now.toISOString()).run();
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
   });
 
@@ -46,6 +80,53 @@ describe("public API", () => {
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=300, stale-while-revalidate=3600");
     expect(response.headers.get("ETag")).toMatch(/^"[a-f0-9]+"$/u);
     expect(await response.json()).toMatchObject({ date: "2026-07-16", status: "complete" });
+  });
+
+  it("returns public Auth0 config and user capabilities without exposing management credentials", async () => {
+    const config = await handleRequest(new Request("https://example.com/api/auth/config"), env, now);
+    expect(config.status).toBe(200);
+    expect(config.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(await config.json()).toMatchObject({ connection: "apple", clientIds: { web: "test-web-client" } });
+    const me = await handleRequest(new Request("https://example.com/api/auth/me", { headers: authHeader }), env, now);
+    expect(me.status).toBe(200);
+    expect(me.headers.get("Cache-Control")).toBe("no-store");
+    expect(me.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(await me.json()).toEqual({ user: { id: "apple|allowed-user" }, capabilities: { feedback: true, audioRetry: true } });
+  });
+
+  it("keeps a valid non-allowlisted session but rejects capability APIs", async () => {
+    await env.DB.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind("apple|allowed-user").run();
+    const me = await handleRequest(new Request("https://example.com/api/auth/me", { headers: authHeader }), env, now);
+    expect(await me.json()).toMatchObject({ capabilities: { feedback: false, audioRetry: false } });
+    const feedback = await handleRequest(new Request("https://example.com/api/feedback", { headers: authHeader }), env, now);
+    expect(feedback.status).toBe(403);
+    expect(await feedback.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+  });
+
+  it("deletes only the authenticated account and clears local audit identity", async () => {
+    await replaceBrief(env.DB, draft());
+    const brief = await handleRequest(new Request("https://example.com/api/briefs/latest"), env, now);
+    const entityId = ((await brief.json()) as { items: Array<{ entityId: string }> }).items[0]!.entityId;
+    await env.DB.prepare("INSERT INTO entity_feedback (entity_id, feedback, source_brief_date, created_at, updated_at, updated_by_user_id) VALUES (?, 'follow', '2026-07-16', ?, ?, ?)").bind(entityId, now.toISOString(), now.toISOString(), "apple|allowed-user").run();
+    const response = await handleRequest(new Request("https://example.com/api/auth/account", {
+      method: "DELETE",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "apple|someone-else" }),
+    }), env, now);
+    expect(response.status).toBe(204);
+    expect(deletedManagementUrl).toBe("https://tenant.test.invalid/api/v2/users/apple%7Callowed-user");
+    expect(await env.DB.prepare("SELECT 1 FROM feedback_allowlist WHERE user_id = ?").bind("apple|allowed-user").first()).toBeNull();
+    expect(await env.DB.prepare("SELECT updated_by_user_id FROM entity_feedback WHERE entity_id = ?").bind(entityId).first()).toEqual({ updated_by_user_id: null });
+  });
+
+  it("treats an already-missing Auth0 user as deleted and stabilizes other upstream failures", async () => {
+    managementDeleteStatus = 404;
+    expect((await handleRequest(new Request("https://example.com/api/auth/account", { method: "DELETE", headers: authHeader }), env, now)).status).toBe(204);
+    await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)").bind("apple|allowed-user", now.toISOString()).run();
+    managementDeleteStatus = 500;
+    const failed = await handleRequest(new Request("https://example.com/api/auth/account", { method: "DELETE", headers: authHeader }), env, now);
+    expect(failed.status).toBe(502);
+    expect(await failed.json()).toMatchObject({ error: { code: "ACCOUNT_DELETE_FAILED" } });
   });
 
   it("returns 304 for a matching ETag and an empty body for HEAD", async () => {
@@ -108,11 +189,11 @@ describe("public API", () => {
     expect(cached.status).toBe(304);
   });
 
-  it("protects and idempotently queues the admin audio endpoint without public CORS", async () => {
+  it("protects and idempotently queues audio retry without public CORS", async () => {
     await replaceBrief(env.DB, draft());
-    const unauthorized = await handleRequest(new Request("https://example.com/api/admin/brief-audio/2026-07-16", { method: "POST" }), env, now);
+    const unauthorized = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/audio/retry", { method: "POST" }), env, now);
     expect(unauthorized.status).toBe(401);
-    const request = () => new Request("https://example.com/api/admin/brief-audio/2026-07-16", { method: "POST", headers: { Authorization: "Bearer test-feedback-token" } });
+    const request = () => new Request("https://example.com/api/briefs/2026-07-16/audio/retry", { method: "POST", headers: authHeader });
     const queued = await handleRequest(request(), env, now);
     expect(await queued.json()).toMatchObject({ briefDate: "2026-07-16", status: "queued" });
     expect(queued.headers.get("Cache-Control")).toBe("no-store");
@@ -124,7 +205,7 @@ describe("public API", () => {
     await replaceBrief(env.DB, draft());
     const brief = await handleRequest(new Request("https://example.com/api/briefs/latest"), env, now);
     const entityId = ((await brief.json()) as { items: Array<{ entityId: string }> }).items[0]!.entityId;
-    const headers = { Authorization: "Bearer test-feedback-token", "Content-Type": "application/json" };
+    const headers = { ...authHeader, "Content-Type": "application/json" };
 
     const verify = await handleRequest(new Request("https://example.com/api/feedback", { headers }), env, now);
     expect(verify.status).toBe(200);
@@ -139,6 +220,7 @@ describe("public API", () => {
     }), env, now);
     expect(saved.status).toBe(200);
     expect(await saved.json()).toEqual({ entityId, value: "follow" });
+    expect(await env.DB.prepare("SELECT updated_by_user_id FROM entity_feedback WHERE entity_id = ?").bind(entityId).first()).toEqual({ updated_by_user_id: "apple|allowed-user" });
 
     const read = await handleRequest(new Request(`https://example.com/api/feedback?entityId=${entityId}`, { headers }), env, now);
     expect(await read.json()).toEqual({ feedback: { [entityId]: "follow" } });
@@ -152,7 +234,7 @@ describe("public API", () => {
     expect(unauthorized.status).toBe(401);
     expect(unauthorized.headers.get("WWW-Authenticate")).toBe("Bearer");
 
-    const headers = { Authorization: "Bearer test-feedback-token", "Content-Type": "application/json" };
+    const headers = { ...authHeader, "Content-Type": "application/json" };
     const invalid = await handleRequest(new Request("https://example.com/api/feedback/entity_bad", {
       method: "PUT",
       headers,

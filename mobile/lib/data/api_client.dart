@@ -29,6 +29,60 @@ class ApiClient {
 
   Uri resolve(String path) => _baseUri.resolve(path);
 
+  Future<Map<String, dynamic>> getJson(
+    String path, {
+    String? accessToken,
+  }) async {
+    final response = await _client
+        .get(
+          resolve(path),
+          headers: {
+            'Accept': 'application/json',
+            if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+    return _decodeJson(response);
+  }
+
+  Future<Map<String, dynamic>?> sendJson(
+    String method,
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? body,
+  }) async {
+    final request = http.Request(method, resolve(path))
+      ..headers.addAll({
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+        if (body != null) 'Content-Type': 'application/json',
+      });
+    if (body != null) request.body = jsonEncode(body);
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 15));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode == 204) return null;
+    return _decodeJson(response);
+  }
+
+  Map<String, dynamic> _decodeJson(http.Response response) {
+    Map<String, dynamic>? decoded;
+    try {
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } on FormatException {
+      decoded = null;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final error = decoded?['error'] as Map<String, dynamic>?;
+      throw ApiException(
+        error?['message'] as String? ?? '请求失败，请稍后重试。',
+        statusCode: response.statusCode,
+      );
+    }
+    return decoded ?? <String, dynamic>{};
+  }
+
   Future<ApiResponse> get(String path, {String? etag}) async {
     final response = await _client
         .get(

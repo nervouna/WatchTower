@@ -1,12 +1,18 @@
 const app = document.querySelector("#app");
 const feedbackModeButton = document.querySelector("#feedback-mode-button");
 const feedbackDialog = document.querySelector("#feedback-dialog");
-const feedbackForm = document.querySelector("#feedback-form");
-const feedbackTokenInput = document.querySelector("#feedback-token");
+const feedbackAccountCopy = document.querySelector("#feedback-account-copy");
+const feedbackUserId = document.querySelector("#feedback-user-id");
 const feedbackAuthError = document.querySelector("#feedback-auth-error");
-const feedbackSessionKey = "watchtower-feedback-token";
+const loginButton = document.querySelector("#login-button");
+const logoutButton = document.querySelector("#logout-button");
+const deleteAccountButton = document.querySelector("#delete-account-button");
+const copyUserIdButton = document.querySelector("#copy-user-id");
 
-let feedbackToken = sessionStorage.getItem(feedbackSessionKey);
+let authClient = null;
+let authUser = null;
+let capabilities = { feedback: false, audioRetry: false };
+let authInitializationError = null;
 
 const sourceNames = {
   "hacker-news": "Hacker News",
@@ -46,43 +52,75 @@ async function api(path) {
   return payload;
 }
 
-async function feedbackApi(path, options = {}) {
+async function feedbackApi(path, options = {}, retried = false) {
+  if (!authClient || !authUser) throw Object.assign(new Error("请先登录。"), { status: 401 });
+  const token = await authClient.getTokenSilently();
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
-  headers.set("Authorization", `Bearer ${feedbackToken ?? ""}`);
+  headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...options, headers });
   const payload = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401 && !retried) {
+      try {
+        await authClient.getTokenSilently({ cacheMode: "off" });
+      } catch {
+        await logout(false);
+        throw Object.assign(new Error("登录已失效，请重新登录。"), { status: 401 });
+      }
+      return feedbackApi(path, options, true);
+    }
+    if (response.status === 403) {
+      capabilities = { feedback: false, audioRetry: false };
+      updateFeedbackModeButton();
+    }
     throw Object.assign(new Error(payload?.error?.message || "请求失败"), { status: response.status });
   }
   return payload;
 }
 
 function updateFeedbackModeButton() {
-  feedbackModeButton.textContent = feedbackToken ? "退出反馈模式" : "反馈模式";
-  feedbackModeButton.setAttribute("aria-pressed", feedbackToken ? "true" : "false");
+  feedbackModeButton.textContent = capabilities.feedback ? "反馈模式已开启" : authUser ? "账号" : "反馈模式";
+  feedbackModeButton.setAttribute("aria-pressed", String(capabilities.feedback));
 }
 
 function openFeedbackDialog(message = "") {
   feedbackAuthError.textContent = message;
   feedbackAuthError.hidden = !message;
-  feedbackTokenInput.value = "";
+  const signedIn = Boolean(authUser);
+  feedbackUserId.hidden = !signedIn;
+  feedbackUserId.textContent = signedIn ? `user ID：${authUser.id}` : "";
+  loginButton.hidden = signedIn;
+  logoutButton.hidden = !signedIn;
+  deleteAccountButton.hidden = !signedIn;
+  copyUserIdButton.hidden = !signedIn;
+  feedbackAccountCopy.textContent = authInitializationError
+    ? "登录服务暂不可用，匿名阅读不受影响。"
+    : capabilities.feedback
+      ? "你的账号已进入反馈模式，可以跨设备共享反馈并重试失败语音。"
+      : signedIn
+        ? "当前账号未加入白名单。你仍可阅读，并可复制 user ID 交给管理员。"
+        : "使用 Apple 登录后可查看账号状态。阅读始终无需登录。";
   feedbackDialog.showModal();
-  feedbackTokenInput.focus();
+  (signedIn ? copyUserIdButton : loginButton).focus();
 }
 
 async function loadFeedback(items) {
-  if (!feedbackToken || items.length === 0) return {};
+  if (!capabilities.feedback || items.length === 0) return {};
   const query = new URLSearchParams();
   for (const item of items) query.append("entityId", item.entityId);
   try {
     return (await feedbackApi(`/api/feedback?${query}`)).feedback;
   } catch (error) {
     if (error.status === 401) {
-      feedbackToken = null;
-      sessionStorage.removeItem(feedbackSessionKey);
+      await logout(false);
       updateFeedbackModeButton();
-      queueMicrotask(() => openFeedbackDialog("凭证已失效，请重新输入。"));
+      queueMicrotask(() => openFeedbackDialog("登录已失效，请重新登录。"));
+      return {};
+    }
+    if (error.status === 403) {
+      capabilities = { feedback: false, audioRetry: false };
+      updateFeedbackModeButton();
       return {};
     }
     throw error;
@@ -144,10 +182,9 @@ function renderFeedbackControls(item, briefDate, initialValue) {
         currentValue = previousValue;
         paint(previousValue);
         status.className = "feedback-status is-error";
-        status.textContent = error.status === 401 ? "凭证已失效，请重新解锁。" : "保存失败，请重试。";
+        status.textContent = error.status === 401 ? "登录已失效，请重新登录。" : error.status === 403 ? "当前账号已无反馈权限。" : "保存失败，请重试。";
         if (error.status === 401) {
-          feedbackToken = null;
-          sessionStorage.removeItem(feedbackSessionKey);
+          void logout(false);
           updateFeedbackModeButton();
           window.setTimeout(() => void main().then(() => openFeedbackDialog("凭证已失效，请重新输入。")), 0);
         }
@@ -173,7 +210,7 @@ function formatDuration(seconds) {
   return `${Math.floor(rounded / 60)} 分 ${String(rounded % 60).padStart(2, "0")} 秒`;
 }
 
-function renderBriefAudio(audio) {
+function renderBriefAudio(audio, briefDate) {
   if (!audio) return null;
   const section = element("section", `brief-audio brief-audio-${audio.status}`);
   section.setAttribute("aria-label", "本期语音简报");
@@ -186,6 +223,22 @@ function renderBriefAudio(audio) {
   }
   if (audio.status === "failed") {
     section.append(element("p", "audio-state-copy", "语音版暂时不可用，文字简报不受影响。"));
+    if (capabilities.audioRetry) {
+      const retry = element("button", "dialog-button dialog-button-secondary", "重新生成语音");
+      retry.type = "button";
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        retry.textContent = "正在提交…";
+        try {
+          await feedbackApi(`/api/briefs/${briefDate}/audio/retry`, { method: "POST" });
+          retry.textContent = "语音正在重新生成";
+        } catch {
+          retry.disabled = false;
+          retry.textContent = "提交失败，请重试";
+        }
+      });
+      section.append(retry);
+    }
     return section;
   }
   const player = element("audio", "audio-player");
@@ -235,7 +288,7 @@ async function renderBrief(brief, isLatest) {
     element("span", "meta-item", `${brief.items.length} 条热点`),
   );
   hero.append(metadata);
-  const audio = renderBriefAudio(brief.audio);
+  const audio = renderBriefAudio(brief.audio, brief.date);
   if (audio) hero.append(audio);
   const coverage = element("dl", "coverage");
   for (const [source, name] of Object.entries(sourceNames)) {
@@ -283,7 +336,7 @@ async function renderBrief(brief, isLatest) {
     sources.append(element("span", "sources-label", "来源"));
     for (const source of item.sources) sources.append(externalLink(source));
     article.append(sources);
-    if (feedbackToken) article.append(renderFeedbackControls(item, brief.date, feedback[item.entityId]));
+    if (capabilities.feedback) article.append(renderFeedbackControls(item, brief.date, feedback[item.entityId]));
     row.append(article);
     list.append(row);
   }
@@ -349,6 +402,7 @@ function renderPrivacy() {
   const blocks = [
     ["本地阅读数据", "你阅读过哪些简报、音频播放位置和离线缓存只保存在当前设备，不会上传到 WatchTower。"],
     ["发布通知", "只有在你主动开启移动 App 的每日提醒后，App 才会把 APNs 设备令牌加密发送给 WatchTower。令牌只用于发送新简报通知；关闭提醒后，服务端会删除对应订阅。"],
+    ["账号与反馈", "阅读无需账号。只有在你主动使用 Apple 登录后，WatchTower 才会保存 Auth0 user ID、白名单状态和你最后修改的共享反馈；你可以在账号对话框中删除账号。"],
     ["公开来源", "简报中的外部链接会在目标网站打开，并适用目标网站各自的隐私政策。"],
   ];
   for (const [title, copy] of blocks) {
@@ -378,41 +432,81 @@ function markCurrentNavigation() {
 }
 
 feedbackModeButton.addEventListener("click", () => {
-  if (feedbackToken) {
-    feedbackToken = null;
-    sessionStorage.removeItem(feedbackSessionKey);
-    updateFeedbackModeButton();
-    void main();
-    return;
-  }
   openFeedbackDialog();
 });
 
 feedbackDialog.querySelector("[data-dialog-cancel]").addEventListener("click", () => feedbackDialog.close());
 
-feedbackForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const submittedToken = feedbackTokenInput.value;
-  const submitButton = feedbackForm.querySelector('[type="submit"]');
-  submitButton.disabled = true;
-  feedbackAuthError.hidden = true;
-  feedbackToken = submittedToken;
+loginButton.addEventListener("click", async () => {
+  if (!authClient) return openFeedbackDialog("登录服务暂不可用，请稍后重试。");
+  await authClient.loginWithRedirect({
+    authorizationParams: { connection: "apple", ui_locales: "zh-CN" },
+    appState: { returnTo: `${location.pathname}${location.search}` },
+  });
+});
+
+async function logout(redirect = true) {
+  const client = authClient;
+  authUser = null;
+  capabilities = { feedback: false, audioRetry: false };
+  updateFeedbackModeButton();
+  if (client) await client.logout(redirect ? { logoutParams: { returnTo: location.origin } } : { openUrl: false });
+}
+
+logoutButton.addEventListener("click", () => void logout());
+
+copyUserIdButton.addEventListener("click", async () => {
+  if (!authUser) return;
+  await window.navigator.clipboard.writeText(authUser.id);
+  copyUserIdButton.textContent = "已复制";
+});
+
+deleteAccountButton.addEventListener("click", async () => {
+  if (!window.confirm("确认删除账号？反馈审计中的 user ID 会被清除，此操作无法撤销。")) return;
+  deleteAccountButton.disabled = true;
   try {
-    await feedbackApi("/api/feedback");
-    sessionStorage.setItem(feedbackSessionKey, submittedToken);
-    feedbackDialog.close();
-    updateFeedbackModeButton();
-    await main();
+    await feedbackApi("/api/auth/account", { method: "DELETE" });
+    await logout();
   } catch (error) {
-    feedbackToken = null;
-    sessionStorage.removeItem(feedbackSessionKey);
-    feedbackAuthError.textContent = error.status === 401 ? "凭证不正确，请重试。" : "暂时无法验证，请稍后重试。";
+    feedbackAuthError.textContent = error.message || "删除失败，请稍后重试。";
     feedbackAuthError.hidden = false;
-    feedbackTokenInput.select();
   } finally {
-    submitButton.disabled = false;
+    deleteAccountButton.disabled = false;
   }
 });
+
+async function initializeAuth() {
+  try {
+    const config = await api("/api/auth/config");
+    authClient = await window.auth0.createAuth0Client({
+      domain: new window.URL(config.issuer).hostname,
+      clientId: config.clientIds.web,
+      cacheLocation: "memory",
+      authorizationParams: { audience: config.audience, redirect_uri: location.origin },
+    });
+    if (location.search.includes("code=") && location.search.includes("state=")) {
+      const result = await authClient.handleRedirectCallback();
+      const requestedReturnTo = typeof result.appState?.returnTo === "string" ? result.appState.returnTo : "/";
+      const returnUrl = new window.URL(requestedReturnTo, location.origin);
+      const returnTo = returnUrl.origin === location.origin ? `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}` : "/";
+      window.history.replaceState({}, document.title, returnTo);
+    }
+    if (!(await authClient.isAuthenticated())) return;
+    const token = await authClient.getTokenSilently();
+    const response = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!response.ok) throw Object.assign(new Error("登录状态验证失败。"), { status: response.status });
+    const me = await response.json();
+    authUser = me.user;
+    capabilities = me.capabilities;
+  } catch (error) {
+    authInitializationError = error;
+    authUser = null;
+    capabilities = { feedback: false, audioRetry: false };
+  } finally {
+    updateFeedbackModeButton();
+    void main();
+  }
+}
 
 async function main() {
   try {
@@ -433,3 +527,4 @@ async function main() {
 
 updateFeedbackModeButton();
 void main();
+void initializeAuth();
