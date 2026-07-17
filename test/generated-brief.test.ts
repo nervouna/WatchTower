@@ -33,6 +33,14 @@ describe("validateGeneratedBrief", () => {
     expect(validateGeneratedBrief(validBrief(), { candidates, entities, enforceSourceQuota: false }).ok).toBe(true);
   });
 
+  it("rejects a brief with no publishable items", () => {
+    const brief = validBrief();
+    brief.items = [];
+    const result = validateGeneratedBrief(brief, { candidates, entities, enforceSourceQuota: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContain("EMPTY_ITEMS");
+  });
+
   it.each([
     ["UNKNOWN_CANDIDATE", (brief: ReturnType<typeof validBrief>) => (brief.items[0]!.candidate_ids = ["missing"])],
     ["UNKNOWN_ENTITY", (brief: ReturnType<typeof validBrief>) => (brief.items[0]!.existing_entity_id = "missing")],

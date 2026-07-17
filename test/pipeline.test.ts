@@ -40,10 +40,15 @@ const generated: GeneratedBrief = {
   ],
 };
 
-function dependencies(failing: SourceKind[] = [], evidenceSuffix = ""): PipelineDependencies {
+function dependencies(
+  failing: SourceKind[] = [],
+  evidenceSuffix = "",
+  empty: SourceKind[] = [],
+): PipelineDependencies {
   return {
     search: vi.fn(async (_key, source) => {
       if (failing.includes(source)) throw new Error("SEARCH_FAILED");
+      if (empty.includes(source)) return { candidates: [], credits: 2, requestId: `req-${source}` };
       return { candidates: [candidate(source, evidenceSuffix)], credits: 2, requestId: `req-${source}` };
     }),
     extract: vi.fn(async (_key: string, candidates: readonly SearchCandidate[]) => ({
@@ -90,6 +95,32 @@ describe("scheduled pipeline", () => {
     );
     expect(result.outcome).toBe("insufficient-sources");
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(0);
+  });
+
+  it("does not count empty normalized search results as successful sources", async () => {
+    const deps = dependencies([], "", ["hacker-news", "product-hunt", "github", "kickstarter"]);
+    const result = await runPipelineStage(
+      env,
+      { stage: "final", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 23, 30) },
+      deps,
+    );
+    expect(result).toMatchObject({ outcome: "insufficient-sources", successfulSources: 0 });
+    expect(deps.generate).not.toHaveBeenCalled();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(0);
+  });
+
+  it("publishes partial when one successful search returns no usable candidates", async () => {
+    const result = await runPipelineStage(
+      env,
+      { stage: "draft", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 22, 30) },
+      dependencies([], "", ["kickstarter"]),
+    );
+    expect(result).toMatchObject({ outcome: "published", status: "partial", successfulSources: 3 });
+    const row = await env.DB.prepare("SELECT status, missing_sources_json FROM briefs").first<{
+      status: string;
+      missing_sources_json: string;
+    }>();
+    expect(row).toEqual({ status: "partial", missing_sources_json: '["kickstarter"]' });
   });
 
   it("preserves a valid draft when the final model call fails", async () => {

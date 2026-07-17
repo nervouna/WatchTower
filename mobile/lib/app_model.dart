@@ -20,13 +20,17 @@ class AppModel extends ChangeNotifier {
   String? archiveError;
 
   Future<void> initialize() async {
-    final cached = await repository.cachedLatest();
-    if (cached != null) {
-      latest = cached.value;
-      fetchedAt = cached.fetchedAt;
-      offline = true;
-      loadingLatest = false;
-      notifyListeners();
+    try {
+      final cached = await repository.cachedLatest();
+      if (cached != null) {
+        latest = cached.value;
+        fetchedAt = cached.fetchedAt;
+        offline = true;
+        loadingLatest = false;
+        notifyListeners();
+      }
+    } catch (_) {
+      // The cache is optional; continue with the authoritative network refresh.
     }
     await refreshLatest();
   }

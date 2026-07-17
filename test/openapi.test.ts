@@ -1,0 +1,40 @@
+import { describe, expect, it } from "vitest";
+import contract from "../contracts/openapi/watchtower-v1.yaml?raw";
+
+function between(value: string, start: string, end: string): string {
+  const startIndex = value.indexOf(start);
+  const endIndex = value.indexOf(end, startIndex + start.length);
+  if (startIndex < 0 || endIndex < 0) throw new Error(`OPENAPI_SECTION_NOT_FOUND:${start}`);
+  return value.slice(startIndex, endIndex);
+}
+
+describe("checked-in OpenAPI contract", () => {
+  it("documents the runtime push subscription app and environment contract", () => {
+    const schema = between(contract, "    PushSubscription:\n", "    ApiError:\n");
+    expect(schema).toMatch(/required: \[[^\]]*appId[^\]]*\]/u);
+    expect(schema).toContain("appId:");
+    expect(schema).toContain("io.damao.watchtower.dev");
+    expect(schema).toContain("io.damao.watchtower");
+    expect(schema).toContain("sandbox");
+    expect(schema).toContain("production");
+  });
+
+  it.each(["put", "delete"])("documents %s push errors and no-store responses", (method) => {
+    const path = between(contract, "  /api/mobile/v1/push-subscriptions:\n", "components:\n");
+    const end = method === "put" ? "    delete:\n" : "components:\n";
+    const operation = method === "put" ? between(path, "    put:\n", end) : path.slice(path.indexOf("    delete:\n"));
+    for (const status of ["204", "400", "413", "415", "429"]) expect(operation).toContain(`'${status}'`);
+    expect(operation).toContain("#/components/responses/MobilePushNoContent");
+    expect(operation).toContain("#/components/responses/MobilePushError");
+    expect(operation).toContain("#/components/responses/MobilePushRateLimited");
+  });
+
+  it("documents no-store and retry headers for push responses", () => {
+    const responses = between(contract, "  responses:\n", "  schemas:\n");
+    expect(responses).toContain("MobilePushNoContent:");
+    expect(responses).toContain("MobilePushError:");
+    expect(responses).toContain("MobilePushRateLimited:");
+    expect(responses).toContain("Cache-Control:");
+    expect(responses).toContain("Retry-After:");
+  });
+});

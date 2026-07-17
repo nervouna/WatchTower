@@ -61,8 +61,8 @@ All lengths are Unicode code points, including punctuation:
 - tags_zh: 2-4 tags, each 1-20
 Aim for 120-180 code points in every summary_zh and 50-90 in every why_it_matters_zh. These are deliberate multi-sentence Chinese paragraphs, not short taglines.
 For update_kind "continuing", existing_entity_id and non-empty material_change_zh are required. For "new", both must be null.
-Each candidate ID may appear in exactly one item. If every source has at least 3 candidates, include every source in at least 3 aggregated items; a cross-source item counts for each represented source.
-Never output or invent URLs. Merge only the same real product, repository, campaign, or concrete event. Do not merge items merely because they share a broad category. Use only supplied evidence. Rank by current relevance. Return at most 20 items. Do not pad weak or duplicate items.`;
+Return between 1 and 20 items. Each candidate ID may appear in exactly one item. If every source has at least 3 candidates, include every source in at least 3 aggregated items; a cross-source item counts for each represented source.
+Never output or invent URLs. Merge only the same real product, repository, campaign, or concrete event. Do not merge items merely because they share a broad category. Use only supplied evidence. Rank by current relevance. Do not pad weak or duplicate items.`;
 }
 
 function buildCatalog(candidates: readonly StoredCandidate[], entities: readonly EntityCatalogEntry[]): string {

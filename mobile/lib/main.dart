@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -20,21 +19,10 @@ Future<void> main() async {
   final api = ApiClient();
   final repository = BriefRepository(api: api, database: LocalDatabase());
   final appModel = AppModel(repository);
-  final handler = await AudioService.init(
-    builder: WatchTowerAudioHandler.new,
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'io.damao.watchtower.audio',
-      androidNotificationChannelName: 'WatchTower 语音简报',
-      androidNotificationOngoing: false,
-    ),
-  );
-  await handler.configure();
-  final audio = AudioController(handler: handler, repository: repository);
+  final audio = AudioController(repository);
   final push = PushController(api: api);
   final router = _router();
   push.onNotificationOpened = (date) => router.go('/briefs/$date');
-  unawaited(appModel.initialize());
-  unawaited(push.initialize());
   runApp(
     WatchTowerApp(
       repository: repository,
@@ -44,6 +32,9 @@ Future<void> main() async {
       router: router,
     ),
   );
+  unawaited(appModel.initialize());
+  unawaited(audio.initialize());
+  unawaited(push.initialize());
 }
 
 GoRouter _router() => GoRouter(

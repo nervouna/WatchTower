@@ -228,6 +228,20 @@ class _AudioCard extends StatelessWidget {
         ),
       );
     }
+    if (controller.availability != AudioAvailability.ready) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          controller.availability == AudioAvailability.initializing
+              ? '正在准备播放器，文字简报可以正常阅读。'
+              : '音频暂时不可用，文字简报不受影响。',
+        ),
+      );
+    }
     final active = controller.item?.id == brief.date;
     return Container(
       padding: const EdgeInsets.all(14),

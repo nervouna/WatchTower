@@ -108,8 +108,12 @@ async function refreshCandidates(
       }
     }),
   );
-  const successful = settled.filter((entry) => entry.result !== null).map((entry) => entry.source);
-  const failed = settled.filter((entry) => entry.result === null).map((entry) => entry.source);
+  const successful = settled
+    .filter((entry) => entry.result !== null && entry.result.candidates.length > 0)
+    .map((entry) => entry.source);
+  const failed = settled
+    .filter((entry) => entry.result === null || entry.result.candidates.length === 0)
+    .map((entry) => entry.source);
   const discovered = settled.flatMap((entry) => entry.result?.candidates ?? []);
   let credits = settled.reduce((total, entry) => total + (entry.result?.credits ?? 0), 0);
   const preferences = await getFeedbackPreferences(env.DB);

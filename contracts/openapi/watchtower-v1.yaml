@@ -57,9 +57,11 @@ paths:
         content:
           application/json: { schema: { $ref: '#/components/schemas/PushSubscription' } }
       responses:
-        '204': { description: Subscription stored }
-        '400': { $ref: '#/components/responses/ApiError' }
-        '429': { $ref: '#/components/responses/ApiError' }
+        '204': { $ref: '#/components/responses/MobilePushNoContent' }
+        '400': { $ref: '#/components/responses/MobilePushError' }
+        '413': { $ref: '#/components/responses/MobilePushError' }
+        '415': { $ref: '#/components/responses/MobilePushError' }
+        '429': { $ref: '#/components/responses/MobilePushRateLimited' }
     delete:
       operationId: deletePushSubscription
       requestBody:
@@ -72,7 +74,11 @@ paths:
               properties:
                 installationSecret: { type: string, minLength: 43, maxLength: 43 }
       responses:
-        '204': { description: Subscription removed or already absent }
+        '204': { $ref: '#/components/responses/MobilePushNoContent' }
+        '400': { $ref: '#/components/responses/MobilePushError' }
+        '413': { $ref: '#/components/responses/MobilePushError' }
+        '415': { $ref: '#/components/responses/MobilePushError' }
+        '429': { $ref: '#/components/responses/MobilePushRateLimited' }
 components:
   parameters:
     Date:
@@ -83,6 +89,23 @@ components:
   responses:
     ApiError:
       description: Stable error envelope
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    MobilePushNoContent:
+      description: Subscription stored, removed, or already absent
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+    MobilePushError:
+      description: Invalid mobile push subscription request
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    MobilePushRateLimited:
+      description: Mobile push subscription rate limit exceeded
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+        Retry-After: { schema: { type: string, const: '60' } }
       content:
         application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
   schemas:
@@ -150,11 +173,13 @@ components:
         nextCursor: { anyOf: [{ type: string }, { type: 'null' }] }
     PushSubscription:
       type: object
-      required: [installationSecret, deviceToken, environment, appVersion]
+      description: The development app ID must use sandbox; the production app ID must use production.
+      required: [installationSecret, deviceToken, environment, appId, appVersion]
       properties:
         installationSecret: { type: string, minLength: 43, maxLength: 43 }
         deviceToken: { type: string, pattern: '^[a-f0-9]{64}$' }
         environment: { type: string, enum: [sandbox, production] }
+        appId: { type: string, enum: [io.damao.watchtower.dev, io.damao.watchtower] }
         appVersion: { type: string }
     ApiError:
       type: object

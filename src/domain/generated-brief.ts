@@ -63,6 +63,7 @@ export function validateGeneratedBrief(value: unknown, context: ValidationContex
     errors.add("FIELD_LENGTH");
     errors.add("FIELD_LENGTH_INTRO");
   }
+  if (value.items.length === 0) errors.add("EMPTY_ITEMS");
   if (value.items.length > 20 || value.items.some((item) => !validateItemShape(item))) errors.add("INVALID_STRUCTURE");
   if (containsUrl(value)) errors.add("MODEL_URL_FORBIDDEN");
 

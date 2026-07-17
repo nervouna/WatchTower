@@ -8,6 +8,23 @@ import 'package:just_audio/just_audio.dart' as audio;
 import '../data/brief_repository.dart';
 import '../models.dart';
 
+enum AudioAvailability { initializing, ready, unavailable }
+
+typedef AudioHandlerInitializer = Future<WatchTowerAudioHandler> Function();
+
+Future<WatchTowerAudioHandler> _initializeAudioHandler() async {
+  final handler = await AudioService.init(
+    builder: WatchTowerAudioHandler.new,
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'io.damao.watchtower.audio',
+      androidNotificationChannelName: 'WatchTower 语音简报',
+      androidNotificationOngoing: false,
+    ),
+  );
+  await handler.configure();
+  return handler;
+}
+
 class WatchTowerAudioHandler extends BaseAudioHandler with SeekHandler {
   WatchTowerAudioHandler() {
     _player.playbackEventStream.listen(_broadcastState);
@@ -92,24 +109,16 @@ class WatchTowerAudioHandler extends BaseAudioHandler with SeekHandler {
 }
 
 class AudioController extends ChangeNotifier {
-  AudioController({required this._handler, required this._repository}) {
-    _subscriptions.add(
-      _handler.playbackState.listen((value) {
-        state = value;
-        notifyListeners();
-      }),
-    );
-    _subscriptions.add(
-      _handler.mediaItem.listen((value) {
-        item = value;
-        notifyListeners();
-      }),
-    );
-  }
+  AudioController(this._repository, {AudioHandlerInitializer? initializer})
+    : _initializer = initializer ?? _initializeAudioHandler;
 
-  final WatchTowerAudioHandler _handler;
+  WatchTowerAudioHandler? _handler;
   final BriefRepository _repository;
+  final AudioHandlerInitializer _initializer;
   final List<StreamSubscription<Object?>> _subscriptions = [];
+  bool _initializing = false;
+  bool _disposed = false;
+  AudioAvailability availability = AudioAvailability.initializing;
   PlaybackState state = PlaybackState();
   MediaItem? item;
   bool loading = false;
@@ -117,18 +126,60 @@ class AudioController extends ChangeNotifier {
 
   bool get playing => state.playing;
 
+  Future<void> initialize() async {
+    if (_initializing || availability != AudioAvailability.initializing) return;
+    _initializing = true;
+    try {
+      final handler = await _initializer();
+      if (_disposed) {
+        await handler.stop();
+        return;
+      }
+      _handler = handler;
+      _listen(handler);
+      availability = AudioAvailability.ready;
+      error = null;
+    } catch (_) {
+      availability = AudioAvailability.unavailable;
+      error = '音频暂时不可用，文字简报不受影响。';
+    } finally {
+      _initializing = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  void _listen(WatchTowerAudioHandler handler) {
+    _subscriptions.add(
+      handler.playbackState.listen((value) {
+        state = value;
+        notifyListeners();
+      }),
+    );
+    _subscriptions.add(
+      handler.mediaItem.listen((value) {
+        item = value;
+        notifyListeners();
+      }),
+    );
+  }
+
   Future<void> toggle(Brief brief) async {
+    final handler = _handler;
     final audioInfo = brief.audio;
-    if (audioInfo?.status != 'ready' || audioInfo?.url == null) return;
+    if (handler == null ||
+        audioInfo?.status != 'ready' ||
+        audioInfo?.url == null) {
+      return;
+    }
     loading = true;
     error = null;
     notifyListeners();
     try {
-      await _handler.setBrief(brief, _repository.resolve(audioInfo!.url!));
-      if (_handler.playbackState.value.playing) {
-        await _handler.pause();
+      await handler.setBrief(brief, _repository.resolve(audioInfo!.url!));
+      if (handler.playbackState.value.playing) {
+        await handler.pause();
       } else {
-        await _handler.play();
+        await handler.play();
       }
     } catch (_) {
       error = '音频加载失败，请稍后重试。';
@@ -138,11 +189,24 @@ class AudioController extends ChangeNotifier {
     }
   }
 
-  Future<void> toggleCurrent() => playing ? _handler.pause() : _handler.play();
-  Future<void> stop() => _handler.stop();
+  Future<void> toggleCurrent() async {
+    final handler = _handler;
+    if (handler == null) return;
+    if (playing) {
+      await handler.pause();
+    } else {
+      await handler.play();
+    }
+  }
+
+  Future<void> stop() async {
+    final handler = _handler;
+    if (handler != null) await handler.stop();
+  }
 
   @override
   void dispose() {
+    _disposed = true;
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }

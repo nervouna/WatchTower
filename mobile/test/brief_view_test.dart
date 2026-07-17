@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:watchtower/audio/audio_controller.dart';
+import 'package:watchtower/data/api_client.dart';
+import 'package:watchtower/data/brief_repository.dart';
+import 'package:watchtower/data/local_database.dart';
 import 'package:watchtower/models.dart';
 import 'package:watchtower/theme.dart';
 import 'package:watchtower/ui/brief_view.dart';
 import 'package:watchtower/ui/screens.dart';
 
-Brief _brief({List<BriefItem> items = const []}) => Brief(
+Brief _brief({List<BriefItem> items = const [], BriefAudio? audio}) => Brief(
   date: '2026-07-17',
   status: 'partial',
   publishedAt: DateTime.utc(2026, 7, 17),
@@ -19,7 +24,7 @@ Brief _brief({List<BriefItem> items = const []}) => Brief(
     'github': 1,
     'kickstarter': 0,
   },
-  audio: null,
+  audio: audio,
   items: items,
 );
 
@@ -55,5 +60,45 @@ void main() {
     );
     await tester.tap(find.text('重试'));
     expect(retried, isTrue);
+  });
+
+  testWidgets('audio initialization failure keeps the brief readable', (
+    tester,
+  ) async {
+    final repository = BriefRepository(
+      api: ApiClient(baseUrl: 'https://example.com'),
+      database: LocalDatabase(),
+    );
+    final controller = AudioController(
+      repository,
+      initializer: () async => throw StateError('audio unavailable'),
+    );
+    await controller.initialize();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: MaterialApp(
+          theme: watchTowerTheme(Brightness.light),
+          home: Scaffold(
+            body: BriefView(
+              brief: _brief(
+                audio: const BriefAudio(
+                  status: 'ready',
+                  url: '/api/briefs/2026-07-17/audio',
+                  durationSeconds: 180,
+                  transcript: '测试逐字稿',
+                ),
+              ),
+              offline: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('今天值得关注的技术信号'), findsOneWidget);
+    expect(find.text('音频暂时不可用，文字简报不受影响。'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
   });
 }

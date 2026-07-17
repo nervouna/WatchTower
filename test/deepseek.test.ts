@@ -70,6 +70,29 @@ describe("generateBrief", () => {
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("summary_zh target: 120-180");
   });
 
+  it("repairs an empty brief exactly once", async () => {
+    const empty = { ...valid, items: [] };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(empty) } }] }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
+    const result = await generateBrief("secret", [candidate], [], { fetcher });
+    expect(result.repaired).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("EMPTY_ITEMS");
+  });
+
+  it("fails when the repair still contains no items", async () => {
+    const empty = { ...valid, items: [] };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json({ choices: [{ message: { content: JSON.stringify(empty) } }] }));
+    await expect(generateBrief("secret", [candidate], [], { fetcher })).rejects.toThrow(
+      "DEEPSEEK_VALIDATION_FAILED:EMPTY_ITEMS",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("fails after one unsuccessful repair", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
