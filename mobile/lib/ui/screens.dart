@@ -132,34 +132,6 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
       ),
       children: [
         Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'ARCHIVE',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '历史归档',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('按日期回看每一期技术与产品热点简报。已缓存 ${model.archive.length} 期。'),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
           child: Column(
             children: [
               for (var index = 0; index < model.archive.length; index++) ...[
@@ -262,13 +234,6 @@ class SettingsScreen extends StatelessWidget {
         32,
       ),
       children: [
-        Text(
-          '设置',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 16),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -331,26 +296,6 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: Text('每日中文科技与产品情报简报'),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        const _Skeleton(width: 120, height: 22),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                _Skeleton(width: 260, height: 22),
-                SizedBox(height: 16),
-                _Skeleton(width: double.infinity, height: 16),
-                SizedBox(height: 8),
-                _Skeleton(width: 300, height: 16),
-                SizedBox(height: 18),
-                _Skeleton(width: double.infinity, height: 72),
-              ],
-            ),
           ),
         ),
       ],

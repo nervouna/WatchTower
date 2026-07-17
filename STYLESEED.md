@@ -16,7 +16,7 @@ touching UI code. Change a locked value only after explicit user approval.
 
 ## Mobile application
 
-- Navigation: two root destinations, `今日` and `归档`; detail, settings, and privacy are spoke screens with standard back navigation
+- Navigation: three root destinations, `今日`, `归档`, and `设置`; detail and privacy are spoke screens with standard back navigation
 - App shell: native safe areas, a compact WatchTower header, system bottom navigation, and a mini audio player only while audio is active
 - Offline: show cached text immediately and identify it with last-refresh context; audio remains online-only
 - Notifications: explain value in-product before requesting the iOS system permission; Android does not expose notification controls until its provider is implemented

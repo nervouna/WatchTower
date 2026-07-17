@@ -48,19 +48,11 @@ class BriefView extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    '${brief.date} · UTC',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
                     brief.headline,
+                    textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       height: 1.2,
@@ -76,6 +68,7 @@ class BriefView extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Wrap(
+                    alignment: WrapAlignment.center,
                     spacing: 8,
                     runSpacing: 8,
                     children: [
@@ -97,10 +90,11 @@ class BriefView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   '本期热点',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -108,6 +102,7 @@ class BriefView extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${brief.items.length} 条经过筛选的技术与产品信号',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -178,6 +173,7 @@ class _Coverage extends StatelessWidget {
   final Map<String, int> counts;
   @override
   Widget build(BuildContext context) => Wrap(
+    alignment: WrapAlignment.center,
     spacing: 16,
     runSpacing: 12,
     children: [
@@ -185,10 +181,11 @@ class _Coverage extends StatelessWidget {
         SizedBox(
           width: 132,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 source.value,
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -196,6 +193,7 @@ class _Coverage extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 '${counts[source.key] ?? 0} 条',
+                textAlign: TextAlign.center,
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -225,6 +223,7 @@ class _AudioCard extends StatelessWidget {
           audioInfo.status == 'pending'
               ? '语音版正在生成，文字简报可以正常阅读。'
               : '语音版暂时不可用，文字简报不受影响。',
+          textAlign: TextAlign.center,
         ),
       );
     }
@@ -239,6 +238,7 @@ class _AudioCard extends StatelessWidget {
           controller.availability == AudioAvailability.initializing
               ? '正在准备播放器，文字简报可以正常阅读。'
               : '音频暂时不可用，文字简报不受影响。',
+          textAlign: TextAlign.center,
         ),
       );
     }
@@ -250,6 +250,7 @@ class _AudioCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton.filled(
             onPressed: controller.loading
@@ -265,12 +266,13 @@ class _AudioCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(
+          Flexible(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   '约 3 分钟听完本期',
+                  textAlign: TextAlign.center,
                   style: Theme.of(
                     context,
                   ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
@@ -279,6 +281,7 @@ class _AudioCard extends StatelessWidget {
                 Text(
                   controller.error ??
                       'AI 语音 · ${_duration(audioInfo.durationSeconds!)}',
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: controller.error == null
                         ? Theme.of(context).colorScheme.onSurfaceVariant
@@ -304,29 +307,24 @@ class _BriefItemCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.rank.toString().padLeft(2, '0'),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item.title,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              item.rank.toString().padLeft(2, '0'),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.title,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
             ),
             const SizedBox(height: 14),
             Text(
@@ -341,10 +339,11 @@ class _BriefItemCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
                     '为什么值得看',
+                    textAlign: TextAlign.center,
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -369,12 +368,14 @@ class _BriefItemCard extends StatelessWidget {
             ],
             const SizedBox(height: 14),
             Wrap(
+              alignment: WrapAlignment.center,
               spacing: 8,
               runSpacing: 8,
               children: [for (final tag in item.tags) _Meta(text: tag)],
             ),
             const SizedBox(height: 14),
             Wrap(
+              alignment: WrapAlignment.center,
               spacing: 8,
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -389,7 +390,7 @@ class _BriefItemCard extends StatelessWidget {
                   TextButton.icon(
                     onPressed: () => launchUrl(
                       source.url,
-                      mode: LaunchMode.externalApplication,
+                      mode: LaunchMode.inAppBrowserView,
                     ),
                     icon: const Icon(Icons.open_in_new, size: 16),
                     label: Text(source.label),
@@ -415,7 +416,7 @@ class _EmptyBrief extends StatelessWidget {
           SizedBox(height: 12),
           Text('本期暂无可发布热点'),
           SizedBox(height: 6),
-          Text('当前信号还不足以形成可靠简报。'),
+          Text('当前信号还不足以形成可靠简报。', textAlign: TextAlign.center),
         ],
       ),
     ),

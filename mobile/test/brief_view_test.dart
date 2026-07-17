@@ -28,7 +28,56 @@ Brief _brief({List<BriefItem> items = const [], BriefAudio? audio}) => Brief(
   items: items,
 );
 
+final _item = BriefItem(
+  rank: 1,
+  entityId: 'example',
+  title: '一条值得关注的产品信号',
+  summary: '这是需要保持左对齐的正文摘要。',
+  whyItMatters: '这是需要保持左对齐的正文解释。',
+  tags: ['产品', 'AI'],
+  continuity: const Continuity(kind: 'new'),
+  sources: [
+    SourceLink(
+      source: 'hacker-news',
+      kind: 'original',
+      label: '原文',
+      url: Uri.parse('https://example.com/article'),
+    ),
+  ],
+);
+
 void main() {
+  testWidgets('centers editorial chrome while keeping prose left aligned', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: watchTowerTheme(Brightness.light),
+        home: Scaffold(
+          body: BriefView(brief: _brief(items: [_item]), offline: false),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<Text>(find.text('今天值得关注的技术信号')).textAlign,
+      TextAlign.center,
+    );
+    expect(tester.widget<Text>(find.text('本期热点')).textAlign, TextAlign.center);
+    expect(
+      tester.widget<Text>(find.text(_item.title)).textAlign,
+      TextAlign.center,
+    );
+    expect(
+      tester.widget<Text>(find.text(_item.summary)).textAlign,
+      isNot(TextAlign.center),
+    );
+    expect(
+      tester.widget<Text>(find.text(_item.whyItMatters)).textAlign,
+      isNot(TextAlign.center),
+    );
+  });
+
   testWidgets('renders offline and partial states without hiding content', (
     tester,
   ) async {
@@ -47,6 +96,7 @@ void main() {
     expect(find.textContaining('离线内容'), findsOneWidget);
     expect(find.textContaining('本期为部分简报'), findsOneWidget);
     expect(find.text('今天值得关注的技术信号'), findsOneWidget);
+    expect(find.text('2026-07-17 · UTC'), findsNothing);
     expect(find.text('本期暂无可发布热点'), findsOneWidget);
   });
 
