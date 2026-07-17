@@ -82,14 +82,14 @@ export async function handlePushSubscriptionRequest(request: Request, env: Subsc
   if (
     typeof body.deviceToken !== "string" || !DEVICE_TOKEN.test(body.deviceToken) ||
     (body.environment !== "sandbox" && body.environment !== "production") ||
+    typeof body.appId !== "string" ||
     typeof body.appVersion !== "string" || !APP_VERSION.test(body.appVersion)
   ) {
     return error("INVALID_SUBSCRIPTION", "推送订阅内容无效。", 400);
   }
-  const appId = body.appId === undefined ? PUSH_APP_IDS.production : body.appId;
   if (
-    (appId !== PUSH_APP_IDS.development && appId !== PUSH_APP_IDS.production) ||
-    (body.appId !== undefined && !appEnvironmentIsValid(appId, body.environment))
+    (body.appId !== PUSH_APP_IDS.development && body.appId !== PUSH_APP_IDS.production) ||
+    !appEnvironmentIsValid(body.appId, body.environment)
   ) {
     return error("INVALID_PUSH_APP_ENVIRONMENT", "推送应用与 APNs 环境不匹配。", 400);
   }
@@ -102,7 +102,7 @@ export async function handlePushSubscriptionRequest(request: Request, env: Subsc
     token_ciphertext: encrypted.ciphertext,
     token_iv: encrypted.iv,
     environment: body.environment,
-    app_id: appId,
+    app_id: body.appId,
     app_version: body.appVersion,
     active: 1,
     createdAt: now.toISOString(),

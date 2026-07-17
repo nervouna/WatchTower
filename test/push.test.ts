@@ -98,7 +98,7 @@ describe("mobile push", () => {
     expect((await handleRequest(request("io.example.watchtower", "sandbox"), env)).status).toBe(400);
   });
 
-  it("preserves legacy subscriptions that omit appId during the compatibility rollout", async () => {
+  it("requires an explicit appId for push subscriptions", async () => {
     const response = await handleRequest(new Request("https://example.com/api/mobile/v1/push-subscriptions", {
       method: "PUT",
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.11" },
@@ -110,13 +110,11 @@ describe("mobile push", () => {
       }),
     }), env);
 
-    expect(response.status).toBe(204);
-    expect(await env.DB.prepare(
-      "SELECT app_id, environment FROM push_subscriptions WHERE token_hmac = ?",
-    ).bind(await hmacHex(hmacKey, "f".repeat(64))).first()).toMatchObject({
-      app_id: productionAppId,
-      environment: "sandbox",
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: "INVALID_SUBSCRIPTION" },
     });
+    expect((await env.DB.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").first<{ count: number }>())?.count).toBe(0);
   });
 
   it("creates ES256 provider tokens and classifies APNs responses", async () => {
