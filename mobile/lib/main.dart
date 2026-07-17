@@ -42,10 +42,17 @@ GoRouter _router() => GoRouter(
     ShellRoute(
       builder: (context, state, child) => AppShell(child: child),
       routes: [
-        GoRoute(path: '/', builder: (context, state) => const LatestScreen()),
+        GoRoute(
+          path: '/',
+          pageBuilder: (context, state) =>
+              NoTransitionPage(key: state.pageKey, child: const LatestScreen()),
+        ),
         GoRoute(
           path: '/archive',
-          builder: (context, state) => const ArchiveScreen(),
+          pageBuilder: (context, state) => NoTransitionPage(
+            key: state.pageKey,
+            child: const ArchiveScreen(),
+          ),
         ),
         GoRoute(
           path: '/briefs/:date',
