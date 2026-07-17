@@ -61,6 +61,11 @@ WatchTower is a Chinese daily technology and product intelligence brief. It runs
 
 ## Development workflow
 
+### Git worktrees
+
+- When work requires a Git branch, use a dedicated worktree by default instead of switching branches in the primary working tree.
+- Place all repository worktrees under the workspace-root `.worktrees/` directory.
+
 1. Inspect the relevant implementation, tests, `package.json`, `wrangler.jsonc`, and migrations before changing behavior.
 2. For automatable non-trivial production logic, add or update a failing test first, implement the minimum change, then refactor without changing behavior.
 3. Keep interfaces and types explicit. Use generated `Env` bindings from `worker-configuration.d.ts`; regenerate them with `npm run cf-typegen` after binding changes.
