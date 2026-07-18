@@ -227,7 +227,7 @@ function approximateMinutes(seconds) {
   return Math.max(1, Math.round(seconds / 60));
 }
 
-function renderPodcastCover(cover, brief) {
+function renderPodcastCover(cover) {
   const wrapper = element("div", `podcast-cover podcast-cover-${cover?.status ?? "missing"}`);
   wrapper.setAttribute("aria-hidden", "true");
   if (cover?.status === "ready") {
@@ -243,11 +243,6 @@ function renderPodcastCover(cover, brief) {
   } else {
     wrapper.classList.add("podcast-cover-fallback");
   }
-  const overlay = element("div", "podcast-cover-overlay");
-  const meta = element("div", "podcast-cover-meta");
-  meta.append(element("span", "podcast-cover-brand", "WATCHTOWER DAILY"), element("span", "podcast-cover-date", brief.date));
-  overlay.append(meta, element("h3", "podcast-cover-title", brief.headline), element("span", "podcast-cover-format", "每日播客 · AI 语音"));
-  wrapper.append(overlay);
   return wrapper;
 }
 
@@ -256,13 +251,20 @@ function renderBriefAudio(audio, brief) {
   const section = element("section", `brief-audio brief-audio-${audio.status}`);
   section.setAttribute("aria-label", "本期语音简报");
   const layout = element("div", "audio-layout");
-  layout.append(renderPodcastCover(audio.cover, brief));
+  layout.append(renderPodcastCover(audio.cover));
   const content = element("div", "audio-content");
   const heading = element("div", "audio-heading");
   const title = audio.status === "ready"
     ? `约 ${approximateMinutes(audio.durationSeconds)} 分钟听完本期`
-    : "AI 语音简报";
-  heading.append(element("h2", "audio-title", title), element("span", "audio-ai-label", "AI 语音，由小米 MiMo 合成"));
+    : "语音简报";
+  const aiLabel = element(
+    "span",
+    "audio-ai-label",
+    audio.status === "ready"
+      ? `AI 合成 · 小米 MiMo · ${formatDuration(audio.durationSeconds)}`
+      : "AI 合成 · 小米 MiMo",
+  );
+  heading.append(element("h2", "audio-title", title), aiLabel);
   content.append(heading);
   if (audio.status === "pending") {
     content.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));
@@ -296,13 +298,17 @@ function renderBriefAudio(audio, brief) {
   player.controls = true;
   player.preload = "metadata";
   player.src = audio.url;
-  const status = element("p", "audio-meta", `实际时长 ${formatDuration(audio.durationSeconds)}`);
   player.addEventListener("loadedmetadata", () => {
-    if (Number.isFinite(player.duration)) status.textContent = `实际时长 ${formatDuration(player.duration)}`;
+    if (Number.isFinite(player.duration)) {
+      aiLabel.textContent = `AI 合成 · 小米 MiMo · ${formatDuration(player.duration)}`;
+    }
   });
+  const status = element("p", "audio-state-copy");
+  status.hidden = true;
   player.addEventListener("error", () => {
     player.hidden = true;
-    status.className = "audio-state-copy audio-error";
+    status.hidden = false;
+    status.classList.add("audio-error");
     status.setAttribute("role", "status");
     status.textContent = "音频加载失败，请稍后刷新。文字简报仍可正常阅读。";
   });
@@ -494,35 +500,40 @@ async function renderBrief(brief, isLatest) {
   if (isLatest && brief.date < utcToday()) {
     const delayed = element("div", "notice notice-delay");
     delayed.setAttribute("role", "status");
-    delayed.textContent = `今日简报生成延迟，当前展示 ${brief.date}`;
+    delayed.textContent = `发布延迟 · 当前展示 ${brief.date}`;
     notices.push(delayed);
   }
   if (brief.status === "partial") {
     const partial = element("div", "notice notice-partial");
     partial.setAttribute("role", "status");
-    partial.textContent = `本期为部分简报，暂缺：${brief.missingSources.map((source) => sourceNames[source]).join("、")}`;
+    partial.textContent = `部分简报 · ${brief.missingSources.map((source) => sourceNames[source]).join("、")} 暂缺`;
     notices.push(partial);
   }
 
   const hero = element("header", "brief-hero hero-card");
-  hero.append(element("p", "eyebrow", `${brief.date} · UTC`), element("h1", "brief-title", brief.headline), element("p", "brief-intro", brief.intro));
-  const metadata = element("div", "metadata");
-  metadata.append(
-    element("span", `status status-${brief.status}`, brief.status === "complete" ? "完整" : "部分"),
-    element("span", "meta-item", `生成于 ${new Date(brief.generatedAt).toLocaleString("zh-CN", { timeZone: "UTC" })} UTC`),
-    element("span", "meta-item", `${brief.items.length} 条热点`),
+  const updatedAt = new Date(brief.generatedAt).toISOString().slice(11, 16);
+  hero.append(
+    element("p", "eyebrow", `${brief.date} · 更新 ${updatedAt} UTC`),
+    element("h1", "brief-title", brief.headline),
+    element("p", "brief-intro", brief.intro),
+    ...notices,
   );
-  hero.append(metadata);
   const audio = renderBriefAudio(brief.audio, brief);
   if (audio) hero.append(audio);
   const coverage = element("dl", "coverage");
+  const coverageLabels = [];
   for (const [source, name] of Object.entries(sourceNames)) {
+    const count = brief.sourceCounts[source] ?? 0;
+    if (count <= 0) continue;
+    coverageLabels.push(`${name} ${count}`);
     const item = element("div", "coverage-item");
-    item.append(element("dt", "coverage-source", name), element("dd", "coverage-count", `${brief.sourceCounts[source] ?? 0} 条`));
+    item.append(element("dt", "coverage-source", name), element("dd", "coverage-count", String(count)));
     coverage.append(item);
   }
-  hero.append(coverage);
-  hero.append(...notices);
+  if (coverageLabels.length > 0) {
+    coverage.setAttribute("aria-label", `来源：${coverageLabels.join("，")}`);
+    hero.append(coverage);
+  }
   fragment.append(hero);
 
   const briefSection = element("section", "brief-section surface-card");

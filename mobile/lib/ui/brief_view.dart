@@ -88,7 +88,7 @@ class _BriefViewState extends State<BriefView> {
             _Notice(
               icon: Icons.info_outline,
               text:
-                  '本期为部分简报，暂缺：${brief.missingSources.map((source) => sourceNames[source] ?? source).join('、')}',
+                  '部分简报 · ${brief.missingSources.map((source) => sourceNames[source] ?? source).join('、')} 暂缺',
             ),
           Card(
             child: Padding(
@@ -111,16 +111,6 @@ class _BriefViewState extends State<BriefView> {
                       height: 1.65,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Meta(text: brief.status == 'complete' ? '完整简报' : '部分简报'),
-                      _Meta(text: '${brief.items.length} 条热点'),
-                    ],
                   ),
                   if (brief.audio != null) ...[
                     const SizedBox(height: 20),
@@ -223,38 +213,30 @@ class _Meta extends StatelessWidget {
 class _Coverage extends StatelessWidget {
   const _Coverage({required this.counts});
   final Map<String, int> counts;
+
   @override
-  Widget build(BuildContext context) => Wrap(
-    alignment: WrapAlignment.center,
-    spacing: 16,
-    runSpacing: 12,
-    children: [
-      for (final source in sourceNames.entries)
-        SizedBox(
-          width: 132,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                source.value,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${counts[source.key] ?? 0} 条',
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) {
+    final sources = sourceNames.entries
+        .where((source) => (counts[source.key] ?? 0) > 0)
+        .map((source) => '${source.value} ${counts[source.key]}')
+        .toList(growable: false);
+    if (sources.isEmpty) return const SizedBox.shrink();
+    final visible = '来源：${sources.join(' · ')}';
+    final semantics = '来源：${sources.join('，')}';
+    return Semantics(
+      container: true,
+      label: semantics,
+      excludeSemantics: true,
+      child: Text(
+        visible,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          height: 1.5,
         ),
-    ],
-  );
+      ),
+    );
+  }
 }
 
 class _AudioCard extends StatefulWidget {
@@ -280,35 +262,26 @@ class _AudioCardState extends State<_AudioCard> {
     final audioInfo = brief.audio!;
     final controller = context.watch<AudioController>();
     if (audioInfo.status != 'ready') {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-        ),
+      return _AudioCardShell(
+        brief: brief,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _PodcastCover(brief: brief),
-            const SizedBox(height: 14),
-            Text(
-              'AI 语音简报',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
+            const _AudioTitle(),
+            const SizedBox(height: 4),
             Text(
               queued || audioInfo.status == 'pending'
                   ? '语音版正在生成，文字简报可以正常阅读。'
                   : '语音版暂时不可用，文字简报不受影响。',
-              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             if (audioInfo.status == 'failed' &&
                 widget.auth?.audioRetryAllowed == true) ...[
               const SizedBox(height: 10),
               Align(
+                alignment: Alignment.centerLeft,
                 child: FilledButton.tonal(
                   onPressed: widget.offline || retrying || queued
                       ? null
@@ -340,7 +313,6 @@ class _AudioCardState extends State<_AudioCard> {
                 const SizedBox(height: 6),
                 Text(
                   retryError!,
-                  textAlign: TextAlign.center,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
@@ -350,67 +322,66 @@ class _AudioCardState extends State<_AudioCard> {
       );
     }
     if (controller.availability != AudioAvailability.ready) {
-      return _AudioUnavailableCard(
+      return _AudioCardShell(
         brief: brief,
-        text: controller.availability == AudioAvailability.initializing
-            ? '正在准备播放器，文字简报可以正常阅读。'
-            : '音频暂时不可用，文字简报不受影响。',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _AudioTitle(),
+            const SizedBox(height: 4),
+            Text(
+              controller.availability == AudioAvailability.initializing
+                  ? '正在准备播放器，文字简报可以正常阅读。'
+                  : '音频暂时不可用，文字简报不受影响。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       );
     }
     final active = controller.item?.id == brief.date;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
+    return _AudioCardShell(
+      brief: brief,
+      highlighted: true,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _PodcastCover(brief: brief),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton.filled(
-                onPressed: controller.loading
-                    ? null
-                    : () => controller.toggle(brief),
-                tooltip: active && controller.playing ? '暂停语音简报' : '播放语音简报',
-                icon: Icon(
-                  controller.loading && active
-                      ? Icons.hourglass_top
-                      : active && controller.playing
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _AudioTitle(
+                  text:
                       '约 ${_approximateMinutes(audioInfo.durationSeconds!)} 分钟听完本期',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      controller.error ??
-                          'AI 语音 · ${_duration(audioInfo.durationSeconds!)}',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: controller.error == null
-                            ? Theme.of(context).colorScheme.onSurfaceVariant
-                            : Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  controller.error ??
+                      'AI 语音 · ${_duration(audioInfo.durationSeconds!)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: controller.error == null
+                        ? Theme.of(context).colorScheme.onSurfaceVariant
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          IconButton.filled(
+            onPressed: controller.loading
+                ? null
+                : () => controller.toggle(brief),
+            tooltip: active && controller.playing ? '暂停语音简报' : '播放语音简报',
+            icon: Icon(
+              controller.loading && active
+                  ? Icons.hourglass_top
+                  : active && controller.playing
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+            ),
           ),
         ],
       ),
@@ -423,25 +394,46 @@ int _approximateMinutes(double seconds) {
   return minutes < 1 ? 1 : minutes;
 }
 
-class _AudioUnavailableCard extends StatelessWidget {
-  const _AudioUnavailableCard({required this.brief, required this.text});
+class _AudioCardShell extends StatelessWidget {
+  const _AudioCardShell({
+    required this.brief,
+    required this.child,
+    this.highlighted = false,
+  });
   final Brief brief;
-  final String text;
+  final Widget child;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
+    padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: highlighted
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(10),
     ),
-    child: Column(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _PodcastCover(brief: brief),
-        const SizedBox(height: 14),
-        Text(text, textAlign: TextAlign.center),
+        const SizedBox(width: 12),
+        Expanded(child: child),
       ],
     ),
+  );
+}
+
+class _AudioTitle extends StatelessWidget {
+  const _AudioTitle({this.text = '语音简报'});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: Theme.of(
+      context,
+    ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
   );
 }
 
@@ -456,9 +448,10 @@ class _PodcastCover extends StatelessWidget {
     final imageUrl = ready
         ? Uri.parse(AppConfig.apiBaseUrl).resolve(cover!.url!).toString()
         : null;
+    final size = MediaQuery.sizeOf(context).width >= 600 ? 96.0 : 72.0;
     return ExcludeSemantics(
-      child: AspectRatio(
-        aspectRatio: 1,
+      child: SizedBox.square(
+        dimension: size,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: Stack(
@@ -474,72 +467,6 @@ class _PodcastCover extends StatelessWidget {
                   loadingBuilder: (context, child, progress) =>
                       progress == null ? child : const SizedBox.shrink(),
                 ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xE6102026),
-                      Color(0x99102026),
-                      Color(0x33102026),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'WATCHTOWER DAILY',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          brief.date,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Text(
-                      brief.headline,
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            height: 1.18,
-                          ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      '每日播客 · AI 语音',
-                      style: TextStyle(
-                        color: Color(0xD9FFFFFF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
