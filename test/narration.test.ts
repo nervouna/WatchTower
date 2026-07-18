@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { generateNarration, validateNarration } from "../src/audio/narration";
 import type { BriefPayload, NarrationScript } from "../src/domain/types";
 
-function brief(): BriefPayload {
+function brief(itemCount = 6): BriefPayload {
   const sources = ["github", "hacker-news", "product-hunt", "kickstarter", "github", "hacker-news"] as const;
   return {
     date: "2026-07-16",
@@ -15,7 +15,7 @@ function brief(): BriefPayload {
     missingSources: [],
     sourceCounts: { "hacker-news": 2, "product-hunt": 1, github: 2, kickstarter: 1 },
     audio: null,
-    items: sources.map((source, index) => ({
+    items: sources.slice(0, itemCount).map((source, index) => ({
       rank: index + 1,
       entityId: `entity_${String(index + 1).padStart(32, "0")}`,
       title: `项目甲${index + 1}`,
@@ -28,12 +28,12 @@ function brief(): BriefPayload {
   };
 }
 
-function validScript(): NarrationScript {
+function validScript(itemCount = 6): NarrationScript {
   const padding = "这项变化来自公开材料，重点在于改进现有流程，让开发者更清楚地理解功能边界与实际用途，并核对公开变化。";
   return {
-    opening_zh: "本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，我们将依次了解六条值得关注的公开更新。",
-    items: brief().items.map((item) => ({ entity_id: item.entityId, text_zh: `${item.title}发布公开更新。${padding}${padding}` })),
-    closing_zh: "以上是本期重点，完整来源与文字内容请在页面中查看。",
+    opening_zh: "本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，接下来按原有排名介绍值得关注的公开变化。",
+    items: brief(itemCount).items.map((item) => ({ entity_id: item.entityId, text_zh: `${item.title}发布公开更新。${padding}${padding}证据明确。` })),
+    closing_zh: "以上是本期重点，完整来源与文字内容请在页面中查看，并可继续查看后续更新。",
   };
 }
 
@@ -41,6 +41,33 @@ describe("narration validation", () => {
   it("accepts a ranked six-item script covering three sources", () => {
     const result = validateNarration(validScript(), brief());
     expect(result.ok).toBe(true);
+  });
+
+  it.each([1, 2, 3, 4])("accepts every planned item for a %i-item short brief", (itemCount) => {
+    const result = validateNarration(validScript(itemCount), brief(itemCount));
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a short script with a missing or reordered planned item", () => {
+    const missing = validScript(4);
+    missing.items.pop();
+    const missingResult = validateNarration(missing, brief(4));
+    expect(missingResult.ok).toBe(false);
+    if (!missingResult.ok) expect(missingResult.errors).toContain("PLANNED_ITEMS");
+
+    const reordered = validScript(4);
+    [reordered.items[0], reordered.items[1]] = [reordered.items[1]!, reordered.items[0]!];
+    const reorderedResult = validateNarration(reordered, brief(4));
+    expect(reorderedResult.ok).toBe(false);
+    if (!reorderedResult.ok) expect(reorderedResult.errors).toContain("PLANNED_ITEMS");
+  });
+
+  it("enforces adaptive total length for short briefs", () => {
+    const script = validScript(1);
+    script.items[0]!.text_zh = "内容过短。";
+    const result = validateNarration(script, brief(1));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toEqual(expect.arrayContaining(["ITEM_LENGTH", "TOTAL_LENGTH"]));
   });
 
   it.each([

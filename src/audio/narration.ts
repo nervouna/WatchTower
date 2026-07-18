@@ -5,6 +5,7 @@ const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/iu;
 const LATIN_TERM_PATTERN = /[A-Za-z][A-Za-z0-9.+#_-]{1,}/gu;
 const NUMBER_PATTERN = /\d+(?:[.,]\d+)*(?:%|％)?|百分之[零一二三四五六七八九十百千万两]+/gu;
+const OPENING = "本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，接下来按原有排名介绍值得关注的公开变化。";
 
 type Validation = { ok: true; value: NarrationScript } | { ok: false; errors: string[] };
 
@@ -34,12 +35,19 @@ export function validateNarration(value: unknown, brief: BriefPayload): Validati
   const script = parseScript(value);
   if (!script) return { ok: false, errors: ["INVALID_SHAPE"] };
   const errors = new Set<string>();
+  const planned = plannedItems(brief);
+  const requiredIds = planned.map((item) => item.entityId);
   if (!script.opening_zh.startsWith("本期音频由人工智能语音合成。")) errors.add("MISSING_SYNTHETIC_NOTICE");
-  if (script.items.length < 5 || script.items.length > 7) errors.add("ITEM_COUNT");
+  if (script.items.length !== planned.length) errors.add("ITEM_COUNT");
+  if (script.items.length !== planned.length || script.items.some((item, index) => item.entity_id !== requiredIds[index])) errors.add("PLANNED_ITEMS");
   if (codePoints(script.opening_zh) < 40 || codePoints(script.opening_zh) > 100) errors.add("OPENING_LENGTH");
-  if (codePoints(script.closing_zh) < 20 || codePoints(script.closing_zh) > 60) errors.add("CLOSING_LENGTH");
+  const short = planned.length <= 4;
+  if (short && script.opening_zh !== OPENING) errors.add("OPENING_LENGTH");
+  if (codePoints(script.closing_zh) < (short ? 35 : 20) || codePoints(script.closing_zh) > (short ? 45 : 60)) errors.add("CLOSING_LENGTH");
   const totalLength = codePoints(script.opening_zh) + codePoints(script.closing_zh) + script.items.reduce((sum, item) => sum + codePoints(item.text_zh), 0);
-  if (totalLength < 650 || totalLength > 900) errors.add("TOTAL_LENGTH");
+  const minimumTotal = short ? 84 + 115 * planned.length : 650;
+  const maximumTotal = short ? 94 + 125 * planned.length : 900;
+  if (totalLength < minimumTotal || totalLength > maximumTotal) errors.add("TOTAL_LENGTH");
 
   const itemById = new Map(brief.items.map((item) => [item.entityId, item]));
   const ranks: number[] = [];
@@ -54,7 +62,7 @@ export function validateNarration(value: unknown, brief: BriefPayload): Validati
     if (seen.has(item.entityId)) errors.add("DUPLICATE_ENTITY");
     seen.add(item.entityId);
     ranks.push(item.rank);
-    if (codePoints(narrationItem.text_zh) < 75 || codePoints(narrationItem.text_zh) > 130) errors.add("ITEM_LENGTH");
+    if (codePoints(narrationItem.text_zh) < (short ? 115 : 75) || codePoints(narrationItem.text_zh) > (short ? 125 : 130)) errors.add("ITEM_LENGTH");
     if (URL_PATTERN.test(narrationItem.text_zh)) errors.add("URL_PRESENT");
     const evidence = `${item.title}\n${item.summary}\n${item.whyItMatters}`;
     if (newTokens(narrationItem.text_zh, evidence, NUMBER_PATTERN)) errors.add("NEW_NUMBER");
@@ -68,14 +76,18 @@ export function validateNarration(value: unknown, brief: BriefPayload): Validati
   return errors.size === 0 ? { ok: true, value: script } : { ok: false, errors: [...errors].sort() };
 }
 
-function systemPrompt(): string {
+function systemPrompt(itemCount: number): string {
+  const lengthRule = itemCount <= 4
+    ? `Total Unicode code points: ${String(84 + 115 * itemCount)}-${String(94 + 125 * itemCount)}.`
+    : "Total Unicode code points: 650-900.";
   return `You write a factual Chinese spoken script for a daily technology brief. Return JSON only:
 {"opening_zh":"string","items":[{"entity_id":"string","text_zh":"string"}],"closing_zh":"string"}
-Use exactly the required_entity_ids supplied by the user, once each and in that order. Total Unicode code points: 650-900. Set opening_zh exactly to: 本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，接下来按原有排名介绍值得关注的公开变化。 Write exactly four complete sentences totaling 115-125 code points for every item. The closing must be exactly two complete sentences totaling 30-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 40-100, each item 75-130, closing 20-60.
+Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling 115-125 code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5-7 items the validator retains total 650-900 and legacy hard limits opening 40-100, each item 75-130, closing 20-60.
 Do not read tags, URLs, source lists, or feedback. Do not add facts, advice, predictions, evaluations, numbers, versions, percentages, or Latin technical names absent from the corresponding item evidence.`;
 }
 
-function plannedItems(brief: BriefPayload): BriefPayload["items"] {
+export function plannedItems(brief: BriefPayload): BriefPayload["items"] {
+  if (brief.items.length <= 4) return brief.items.slice().sort((left, right) => left.rank - right.rank);
   const selected = brief.items.slice(0, Math.min(5, brief.items.length));
   const allSources = new Set(brief.items.flatMap((item) => item.sources.map((source) => source.source)));
   const selectedSources = new Set(selected.flatMap((item) => item.sources.map((source) => source.source)));
@@ -147,7 +159,8 @@ function parseJson(content: string): unknown {
 }
 
 export async function generateNarration(apiKey: string, brief: BriefPayload, options: RetryOptions = {}): Promise<NarrationScript> {
-  const system = systemPrompt();
+  const itemCount = plannedItems(brief).length;
+  const system = systemPrompt(itemCount);
   const user = briefInput(brief);
   const first = await complete(apiKey, [{ role: "system", content: system }, { role: "user", content: user }], options);
   const firstValidation = validateNarration(parseJson(first), brief);
@@ -156,7 +169,7 @@ export async function generateNarration(apiKey: string, brief: BriefPayload, opt
     { role: "system", content: system },
     { role: "user", content: user },
     { role: "assistant", content: first },
-    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: 本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，接下来按原有排名介绍值得关注的公开变化。 Every item must contain exactly four complete sentences totaling 115-125 code points, using only that item's supplied evidence. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between 750 and 880 code points. Do not introduce any number, percentage, version, or Latin technical name unless copied verbatim from that item's evidence. Return the complete JSON only.` },
+    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: ${OPENING} Every item must contain exactly four complete sentences totaling 115-125 code points, using only that item's supplied evidence. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between ${String(itemCount <= 4 ? 84 + 115 * itemCount : 650)} and ${String(itemCount <= 4 ? 94 + 125 * itemCount : 900)} code points. Do not introduce any number, percentage, version, or Latin technical name unless copied verbatim from that item's evidence. Return the complete JSON only.` },
   ], options);
   const repairValidation = validateNarration(parseJson(repaired), brief);
   if (!repairValidation.ok) throw new Error(`NARRATION_VALIDATION_FAILED:${repairValidation.errors.join(",")}`);

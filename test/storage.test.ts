@@ -143,15 +143,16 @@ describe("D1 repository", () => {
   it("hydrates audio states and claims one content hash idempotently", async () => {
     await replaceBrief(env.DB, briefDraft("2026-07-16"));
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T01:00:00.000Z"))?.audio).toBeNull();
-    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:00:00.000Z")).toBe("queued");
-    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v2-adaptive", "2026-07-16T01:00:00.000Z")).toBe("queued");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v2-adaptive", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
     expect((await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:02:00.000Z"))?.attempt_count).toBe(1);
     expect(await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:03:00.000Z")).toBeNull();
     expect((await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:04:00.000Z", true))?.attempt_count).toBe(2);
     const script = { opening_zh: "开场", items: [{ entity_id: "id", text_zh: "正文" }], closing_zh: "结尾" };
     await saveBriefAudioScript(env.DB, "2026-07-16", "hash-a", JSON.stringify(script), "2026-07-16T01:04:00.000Z");
     await readyBriefAudio(env.DB, "2026-07-16", "hash-a", "briefs/a.wav", 180, "2026-07-16T01:05:00.000Z");
-    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:06:00.000Z")).toBe("already-ready");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v2-adaptive", "2026-07-16T01:06:00.000Z")).toBe("already-ready");
+    expect((await getBriefAudio(env.DB, "2026-07-16"))?.prompt_version).toBe("narration-v2-adaptive");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({ status: "ready", durationSeconds: 180, transcript: "开场\n\n正文\n\n结尾" });
     expect((await getBriefAudio(env.DB, "2026-07-16"))?.object_key).toBe("briefs/a.wav");
   });
@@ -171,7 +172,7 @@ describe("D1 repository", () => {
     expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:05:00.000Z")).toBe("already-ready");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toBeNull();
 
-    await queueBriefAudio(env.DB, "2026-07-16", "audio-a", "2026-07-16T01:06:00.000Z");
+    await queueBriefAudio(env.DB, "2026-07-16", "audio-a", "narration-v2-adaptive", "2026-07-16T01:06:00.000Z");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio?.cover).toMatchObject({
       status: "ready",
       url: "/api/briefs/2026-07-16/cover",
@@ -182,7 +183,7 @@ describe("D1 repository", () => {
 
   it("keeps ready audio available when cover generation fails", async () => {
     await replaceBrief(env.DB, briefDraft("2026-07-16"));
-    await queueBriefAudio(env.DB, "2026-07-16", "audio", "2026-07-16T01:00:00.000Z");
+    await queueBriefAudio(env.DB, "2026-07-16", "audio", "narration-v2-adaptive", "2026-07-16T01:00:00.000Z");
     await saveBriefAudioScript(env.DB, "2026-07-16", "audio", JSON.stringify({ opening_zh: "开场", items: [], closing_zh: "结尾" }), "2026-07-16T01:01:00.000Z");
     await readyBriefAudio(env.DB, "2026-07-16", "audio", "briefs/audio.wav", 180, "2026-07-16T01:02:00.000Z");
     await queueBriefCover(env.DB, "2026-07-16", "cover", "2026-07-16T01:03:00.000Z");

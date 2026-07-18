@@ -223,6 +223,10 @@ function formatDuration(seconds) {
   return `${Math.floor(rounded / 60)} 分 ${String(rounded % 60).padStart(2, "0")} 秒`;
 }
 
+function approximateMinutes(seconds) {
+  return Math.max(1, Math.round(seconds / 60));
+}
+
 function renderPodcastCover(cover, brief) {
   const wrapper = element("div", `podcast-cover podcast-cover-${cover?.status ?? "missing"}`);
   wrapper.setAttribute("aria-hidden", "true");
@@ -255,7 +259,10 @@ function renderBriefAudio(audio, brief) {
   layout.append(renderPodcastCover(audio.cover, brief));
   const content = element("div", "audio-content");
   const heading = element("div", "audio-heading");
-  heading.append(element("h2", "audio-title", "约 3 分钟听完本期"), element("span", "audio-ai-label", "AI 语音，由小米 MiMo 合成"));
+  const title = audio.status === "ready"
+    ? `约 ${approximateMinutes(audio.durationSeconds)} 分钟听完本期`
+    : "AI 语音简报";
+  heading.append(element("h2", "audio-title", title), element("span", "audio-ai-label", "AI 语音，由小米 MiMo 合成"));
   content.append(heading);
   if (audio.status === "pending") {
     content.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));

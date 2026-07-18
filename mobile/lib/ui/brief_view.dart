@@ -292,6 +292,14 @@ class _AudioCardState extends State<_AudioCard> {
             _PodcastCover(brief: brief),
             const SizedBox(height: 14),
             Text(
+              'AI 语音简报',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
               queued || audioInfo.status == 'pending'
                   ? '语音版正在生成，文字简报可以正常阅读。'
                   : '语音版暂时不可用，文字简报不受影响。',
@@ -382,7 +390,7 @@ class _AudioCardState extends State<_AudioCard> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      '约 3 分钟听完本期',
+                      '约 ${_approximateMinutes(audioInfo.durationSeconds!)} 分钟听完本期',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -408,6 +416,11 @@ class _AudioCardState extends State<_AudioCard> {
       ),
     );
   }
+}
+
+int _approximateMinutes(double seconds) {
+  final minutes = (seconds / 60).round();
+  return minutes < 1 ? 1 : minutes;
 }
 
 class _AudioUnavailableCard extends StatelessWidget {

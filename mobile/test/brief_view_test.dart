@@ -177,6 +177,49 @@ void main() {
     expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
   });
 
+  testWidgets('audio copy adapts to ready and pending duration states', (
+    tester,
+  ) async {
+    final repository = BriefRepository(
+      api: ApiClient(baseUrl: 'https://example.com'),
+      database: LocalDatabase(),
+    );
+    final controller = AudioController(
+      repository,
+      initializer: () async => WatchTowerAudioHandler(),
+    );
+    await controller.initialize();
+    Future<void> pump(BriefAudio audio) => tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: controller,
+        child: MaterialApp(
+          theme: watchTowerTheme(Brightness.light),
+          home: Scaffold(body: BriefView(brief: _brief(audio: audio), offline: false)),
+        ),
+      ),
+    );
+
+    await pump(const BriefAudio(
+      status: 'ready',
+      url: '/api/briefs/2026-07-17/audio',
+      durationSeconds: 70,
+      transcript: '测试逐字稿',
+      cover: null,
+    ));
+    expect(find.text('约 1 分钟听完本期'), findsOneWidget);
+    expect(find.text('AI 语音 · 1 分 10 秒'), findsOneWidget);
+
+    await pump(const BriefAudio(
+      status: 'pending',
+      url: null,
+      durationSeconds: null,
+      transcript: null,
+      cover: null,
+    ));
+    expect(find.text('AI 语音简报'), findsOneWidget);
+    expect(find.textContaining('分钟听完本期'), findsNothing);
+  });
+
   testWidgets(
     'feedback controls require allowlist capability and stay disabled offline',
     (tester) async {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { synthesizeSpeech } from "../src/audio/mimo";
+import { audioDurationRange, synthesizeSpeech } from "../src/audio/mimo";
 
 function wavBase64(durationSeconds = 180): string {
   const sampleRate = 8_000;
@@ -21,7 +21,7 @@ function wavBase64(durationSeconds = 180): string {
 describe("MiMo speech synthesis", () => {
   it("uses server authentication, the TTS model, Bing Tang voice, and exact transcript", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ choices: [{ message: { audio: { data: wavBase64() } } }] }));
-    const result = await synthesizeSpeech("secret", "精确逐字稿", "content-id", { fetcher });
+    const result = await synthesizeSpeech("secret", "精确逐字稿", "content-id", 6, { fetcher });
     expect(result.durationSeconds).toBe(180);
     const init = fetcher.mock.calls[0]?.[1];
     expect(new Headers(init?.headers).get("api-key")).toBe("secret");
@@ -35,11 +35,24 @@ describe("MiMo speech synthesis", () => {
     ["invalid base64", { choices: [{ message: { audio: { data: "%%%=" } } }] }, "MIMO_INVALID_BASE64"],
   ])("rejects %s", async (_name, response, code) => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(response));
-    await expect(synthesizeSpeech("secret", "逐字稿", "id", { fetcher })).rejects.toThrow(code);
+    await expect(synthesizeSpeech("secret", "逐字稿", "id", 6, { fetcher })).rejects.toThrow(code);
   });
 
-  it("rejects audio outside the publish duration", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ choices: [{ message: { audio: { data: wavBase64(30) } } }] }));
-    await expect(synthesizeSpeech("secret", "逐字稿", "id", { fetcher })).rejects.toThrow("MIMO_DURATION_OUT_OF_RANGE");
+  it.each([
+    [1, 20, 75],
+    [2, 40, 105],
+    [3, 60, 135],
+    [4, 80, 165],
+    [5, 135, 225],
+    [7, 135, 225],
+  ])("uses the %i-item duration profile", (itemCount, minimum, maximum) => {
+    expect(audioDurationRange(itemCount)).toEqual({ minimum, maximum });
+  });
+
+  it("rejects audio outside the matching item-count duration", async () => {
+    const tooShort = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ choices: [{ message: { audio: { data: wavBase64(19) } } }] }));
+    await expect(synthesizeSpeech("secret", "逐字稿", "id", 1, { fetcher: tooShort })).rejects.toThrow("MIMO_DURATION_OUT_OF_RANGE");
+    const tooLong = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ choices: [{ message: { audio: { data: wavBase64(76) } } }] }));
+    await expect(synthesizeSpeech("secret", "逐字稿", "id", 1, { fetcher: tooLong })).rejects.toThrow("MIMO_DURATION_OUT_OF_RANGE");
   });
 });

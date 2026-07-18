@@ -655,18 +655,19 @@ export async function getBriefAudio(db: D1Database, date: string): Promise<Brief
   return db.prepare("SELECT * FROM brief_audio WHERE brief_date = ?").bind(date).first<BriefAudioRow>();
 }
 
-export async function queueBriefAudio(db: D1Database, date: string, contentHash: string, now: string): Promise<"queued" | "already-pending" | "already-ready"> {
+export async function queueBriefAudio(db: D1Database, date: string, contentHash: string, promptVersion: string, now: string): Promise<"queued" | "already-pending" | "already-ready"> {
   const current = await getBriefAudio(db, date);
   if (current?.content_hash === contentHash && current.status === "ready") return "already-ready";
   if (current?.content_hash === contentHash && (current.status === "pending" || current.status === "processing")) return "already-pending";
   await db.prepare(
     `INSERT INTO brief_audio (brief_date, content_hash, status, provider, model, voice, prompt_version, created_at, updated_at)
-     VALUES (?, ?, 'pending', 'xiaomi-mimo', 'mimo-v2.5-tts', '冰糖', 'narration-v1', ?, ?)
+     VALUES (?, ?, 'pending', 'xiaomi-mimo', 'mimo-v2.5-tts', '冰糖', ?, ?, ?)
      ON CONFLICT(brief_date) DO UPDATE SET content_hash = excluded.content_hash, status = 'pending',
        script_json = CASE WHEN brief_audio.content_hash = excluded.content_hash THEN brief_audio.script_json ELSE NULL END,
        object_key = brief_audio.object_key, duration_seconds = brief_audio.duration_seconds,
-       error_code = NULL, updated_at = excluded.updated_at, generated_at = brief_audio.generated_at`
-  ).bind(date, contentHash, now, now).run();
+       prompt_version = excluded.prompt_version, error_code = NULL,
+       updated_at = excluded.updated_at, generated_at = brief_audio.generated_at`
+  ).bind(date, contentHash, promptVersion, now, now).run();
   return "queued";
 }
 

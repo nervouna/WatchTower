@@ -24,7 +24,7 @@ describe.skipIf(env.RUN_AUDIO_E2E !== "true")("live audio providers", () => {
     if (!script) throw lastError;
     expect(validateNarration(script, brief).ok).toBe(true);
     const transcript = narrationTranscript(script);
-    const result = await synthesizeSpeech(env.MIMO_API_KEY, transcript, `local-e2e-${brief.date}`);
+    const result = await synthesizeSpeech(env.MIMO_API_KEY, transcript, `local-e2e-${brief.date}`, script.items.length);
     const wav = parseWav(result.wav);
     expect(wav.durationSeconds).toBeGreaterThanOrEqual(150);
     expect(wav.durationSeconds).toBeLessThanOrEqual(210);

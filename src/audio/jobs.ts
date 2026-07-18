@@ -1,5 +1,5 @@
-import { generateNarration, narrationTranscript } from "./narration";
-import { synthesizeSpeech } from "./mimo";
+import { generateNarration, narrationTranscript, plannedItems } from "./narration";
+import { audioDurationRange, synthesizeSpeech } from "./mimo";
 import { parseWav } from "./wav";
 import { claimBriefAudio, failBriefAudio, getBriefAudio, queueBriefAudio, readyBriefAudio, saveBriefAudioScript } from "../storage/repository";
 import { getBrief } from "../storage/repository";
@@ -8,7 +8,7 @@ import type { BriefPayload, NarrationScript } from "../domain/types";
 export interface BriefAudioJob { kind?: "brief-audio"; briefDate: string; contentHash: string }
 export const AUDIO_MODEL = "mimo-v2.5-tts";
 export const AUDIO_VOICE = "冰糖";
-export const NARRATION_PROMPT_VERSION = "narration-v1";
+export const NARRATION_PROMPT_VERSION = "narration-v2-adaptive";
 
 function audioEnabled(value: unknown): boolean { return value === "true"; }
 
@@ -34,7 +34,7 @@ export async function enqueueBriefAudio(env: Pick<Env, "DB" | "BRIEF_AUDIO_QUEUE
   const brief = await getBrief(env.DB, date, now.toISOString());
   if (!brief) return "not-found";
   const contentHash = await briefAudioContentHash(brief);
-  const status = await queueBriefAudio(env.DB, date, contentHash, now.toISOString());
+  const status = await queueBriefAudio(env.DB, date, contentHash, NARRATION_PROMPT_VERSION, now.toISOString());
   if (status === "queued") {
     try {
       await env.BRIEF_AUDIO_QUEUE.send({ kind: "brief-audio", briefDate: date, contentHash } satisfies BriefAudioJob);
@@ -69,7 +69,8 @@ export async function processBriefAudioJob(env: Pick<Env, "DB" | "BRIEF_AUDIO" |
     const existing = await env.BRIEF_AUDIO.head(objectKey);
     if (existing) {
       const duration = Number(existing.customMetadata?.durationSeconds);
-      if (Number.isFinite(duration) && duration >= 135 && duration <= 225) {
+      const range = audioDurationRange(plannedItems(brief).length);
+      if (Number.isFinite(duration) && duration >= range.minimum && duration <= range.maximum) {
         await readyBriefAudio(env.DB, job.briefDate, job.contentHash, objectKey, duration, now.toISOString());
         return "ready";
       }
@@ -77,7 +78,7 @@ export async function processBriefAudioJob(env: Pick<Env, "DB" | "BRIEF_AUDIO" |
     const script = claimed.script_json ? parseStoredScript(claimed.script_json) : await generateNarration(env.DEEPSEEK_API_KEY, brief);
     if (!claimed.script_json) await saveBriefAudioScript(env.DB, job.briefDate, job.contentHash, JSON.stringify(script), new Date().toISOString());
     const transcript = narrationTranscript(script);
-    const result = await synthesizeSpeech(env.MIMO_API_KEY, transcript, job.contentHash);
+    const result = await synthesizeSpeech(env.MIMO_API_KEY, transcript, job.contentHash, script.items.length);
     parseWav(result.wav);
     await env.BRIEF_AUDIO.put(objectKey, result.wav, {
       httpMetadata: { contentType: "audio/wav", cacheControl: "public, max-age=3600" },

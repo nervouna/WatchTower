@@ -21,7 +21,17 @@ function decodeAudio(value: unknown): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-export async function synthesizeSpeech(apiKey: string, transcript: string, contentId: string, options: RetryOptions = {}): Promise<{ wav: Uint8Array; durationSeconds: number }> {
+export function audioDurationRange(itemCount: number): { minimum: number; maximum: number } {
+  switch (itemCount) {
+    case 1: return { minimum: 20, maximum: 75 };
+    case 2: return { minimum: 40, maximum: 105 };
+    case 3: return { minimum: 60, maximum: 135 };
+    case 4: return { minimum: 80, maximum: 165 };
+    default: return { minimum: 135, maximum: 225 };
+  }
+}
+
+export async function synthesizeSpeech(apiKey: string, transcript: string, contentId: string, itemCount: number, options: RetryOptions = {}): Promise<{ wav: Uint8Array; durationSeconds: number }> {
   const response = await fetchJsonWithRetry<unknown>(MIMO_ENDPOINT, {
     method: "POST",
     headers: { "api-key": apiKey, "Content-Type": "application/json" },
@@ -37,7 +47,8 @@ export async function synthesizeSpeech(apiKey: string, transcript: string, conte
   }, { ...options, timeoutMs: 12 * 60_000 });
   const raw = decodeAudio(response.data);
   const parsed = parseWav(raw);
-  if (parsed.durationSeconds < 135 || parsed.durationSeconds > 225) throw new Error("MIMO_DURATION_OUT_OF_RANGE");
+  const range = audioDurationRange(itemCount);
+  if (parsed.durationSeconds < range.minimum || parsed.durationSeconds > range.maximum) throw new Error("MIMO_DURATION_OUT_OF_RANGE");
   const wav = await addAigcMetadata(raw, contentId);
   if (wav.length > MAX_WAV_BYTES) throw new Error("MIMO_AUDIO_TOO_LARGE");
   return { wav, durationSeconds: parsed.durationSeconds };
