@@ -364,8 +364,7 @@ button:focus-visible,
   font-weight: 600;
 }
 
-.notice-delay,
-.notice-partial {
+.notice-delay {
   background: var(--warning-soft);
   color: var(--warning);
 }

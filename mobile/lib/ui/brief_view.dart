@@ -84,12 +84,6 @@ class _BriefViewState extends State<BriefView> {
                   ? '当前显示离线内容。'
                   : '当前显示离线内容，缓存于 ${_time(fetchedAt)}。',
             ),
-          if (brief.status == 'partial')
-            _Notice(
-              icon: Icons.info_outline,
-              text:
-                  '${brief.missingSources.map((source) => sourceNames[source] ?? source).join('、')} 暂缺',
-            ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),

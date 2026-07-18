@@ -503,13 +503,6 @@ async function renderBrief(brief, isLatest) {
     delayed.textContent = `发布延迟 · 当前展示 ${brief.date}`;
     notices.push(delayed);
   }
-  if (brief.status === "partial") {
-    const partial = element("div", "notice notice-partial");
-    partial.setAttribute("role", "status");
-    partial.textContent = `${brief.missingSources.map((source) => sourceNames[source]).join("、")} 暂缺`;
-    notices.push(partial);
-  }
-
   const hero = element("header", "brief-hero hero-card");
   const updatedAt = new Date(brief.generatedAt).toISOString().slice(11, 16);
   hero.append(

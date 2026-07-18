@@ -147,7 +147,7 @@ void main() {
       ),
     );
     expect(find.textContaining('离线内容'), findsOneWidget);
-    expect(find.text('Kickstarter 暂缺'), findsOneWidget);
+    expect(find.textContaining('暂缺'), findsNothing);
     expect(find.text('今天值得关注的技术信号'), findsOneWidget);
     expect(find.text('2026-07-17 · UTC'), findsNothing);
     expect(find.text('本期暂无可发布热点'), findsOneWidget);
@@ -459,7 +459,7 @@ void main() {
     expect(tester.getTopLeft(find.text(_item.title)).dy, lessThan(852));
   });
 
-  testWidgets('wide large-text partial brief wraps without overflow', (
+  testWidgets('wide large-text partial brief has no overflow', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1024, 1366);
@@ -494,7 +494,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('暂缺'), findsOneWidget);
+    expect(find.textContaining('暂缺'), findsNothing);
   });
 
   testWidgets(
