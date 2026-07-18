@@ -3,13 +3,15 @@ import {
   claimExplorationWork,
   failExploration,
   readyExploration,
+  recordExplorationResearchUsage,
+  recordExplorationSynthesisUsage,
   releaseExplorationForRetry,
   saveExplorationEvidence,
   savedEvidence,
   type ExplorationJob,
 } from "./repository";
-import { hasEnoughExplorationEvidence, researchExploration } from "./research";
-import { synthesizeExploration } from "./deepseek";
+import { ExplorationResearchError, hasEnoughExplorationEvidence, researchExploration } from "./research";
+import { ExplorationSynthesisError, synthesizeExploration } from "./deepseek";
 
 export const EXPLORATION_QUEUE_NAME = "watchtower-item-exploration-jobs";
 
@@ -46,7 +48,8 @@ export async function processExplorationJob(
       const research = await researchExploration(env.TAVILY_API_KEY, seed);
       evidence = research.evidence;
       tavilyCredits = research.credits;
-      await saveExplorationEvidence(env.DB, job, evidence, research.credits, nowIso);
+      if (evidence.length > 0) await saveExplorationEvidence(env.DB, job, evidence, research.credits, nowIso);
+      else await recordExplorationResearchUsage(env.DB, job, research.credits, nowIso);
       console.log(JSON.stringify({ event: "exploration_research_complete", entityId: job.entityId,
         durationMs: Date.now() - researchStarted, sourceCount: evidence.length, tavilyCredits }));
     }
@@ -75,13 +78,24 @@ export async function processExplorationJob(
       return;
     }
     const synthesisStarted = Date.now();
-    const result = await synthesizeExploration(env.DEEPSEEK_API_KEY, row.title, evidence);
+    let result;
+    try {
+      result = await synthesizeExploration(env.DEEPSEEK_API_KEY, row.title, evidence);
+    } catch (error) {
+      if (error instanceof ExplorationSynthesisError) {
+        await recordExplorationSynthesisUsage(env.DB, job, error.tokens, nowIso);
+      }
+      throw error;
+    }
     console.log(JSON.stringify({ event: "exploration_synthesis_complete", entityId: job.entityId,
       durationMs: Date.now() - synthesisStarted, deepseekTokens: result.tokens, repaired: result.repaired }));
     await readyExploration(env.DB, job, result, nowIso, expiresAt);
     console.log(JSON.stringify({ event: "exploration_ready", entityId: job.entityId, quality: result.quality,
       sourceCount: evidence.length, tavilyCredits, deepseekTokens: result.tokens }));
   } catch (error) {
+    if (error instanceof ExplorationResearchError) {
+      await recordExplorationResearchUsage(env.DB, job, error.credits, nowIso);
+    }
     if (error instanceof ExplorationProcessingError) throw error;
     const code = errorCode(error);
     throw new ExplorationProcessingError(code, retryableError(code));

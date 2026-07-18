@@ -90,8 +90,6 @@ export function validateExplorationOutput(value: unknown, sources: readonly Expl
   const citations = new Set<string>();
   collectCitations(value, citations);
   const domains = new Set(sources.filter((source) => citations.has(source.id)).map((source) => source.domain));
-  if (domains.size < 2) return { ok: false, errors: ["INSUFFICIENT_CITATION_DOMAINS"] };
-
   const sections: ExplorationSections = {
     overview: value.overview as ExplorationSections["overview"],
     relatedProducts: value.relatedProducts as ExplorationSections["relatedProducts"],
@@ -100,7 +98,7 @@ export function validateExplorationOutput(value: unknown, sources: readonly Expl
     watchNext: value.watchNext as ExplorationSections["watchNext"],
   };
   const quality: ExplorationQuality = sections.relatedProducts.length > 0 &&
-    sections.perspectives.length > 0 && sections.industry !== null && sections.watchNext.length > 0
+    sections.perspectives.length > 0 && sections.industry !== null && sections.watchNext.length > 0 && domains.size >= 2
     ? "complete"
     : "partial";
   return { ok: true, value: sections, quality };

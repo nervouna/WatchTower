@@ -11,6 +11,10 @@ const EXTRACT_ENDPOINT = "https://api.tavily.com/extract";
 export const EXPLORATION_QUERY_VERSION = "exploration-v2-bounded";
 const MAX_QUERY_CODE_POINTS = 380;
 
+export class ExplorationResearchError extends Error {
+  constructor(message: string, readonly credits: number) { super(message); }
+}
+
 interface RawSearchResult { title: string; url: string; content: string; score: number }
 interface Candidate extends RawSearchResult { queryKind: ExplorationQueryKind; domain: string }
 
@@ -50,9 +54,9 @@ export function explorationQueries(seed: ExplorationSeed): Record<ExplorationQue
   };
 }
 
-function stageError(stage: "SEARCH" | "EXTRACT", error: unknown): Error {
+function stageError(stage: "SEARCH" | "EXTRACT", error: unknown, usedCredits: number): ExplorationResearchError {
   const code = error instanceof Error ? (error.message.split(":", 1)[0] ?? "UNKNOWN_ERROR") : "UNKNOWN_ERROR";
-  return new Error(`TAVILY_${stage}_${code}`);
+  return new ExplorationResearchError(`TAVILY_${stage}_${code}`, usedCredits);
 }
 
 async function search(
@@ -146,7 +150,7 @@ export async function researchExploration(
   const searchCredits = successful.reduce((total, result) => total + result.credits, 0);
   const selected = selectExplorationPages(successful.flatMap((result) => result.candidates));
   if (selected.length === 0) {
-    if (failed[0] !== undefined) throw stageError("SEARCH", failed[0]);
+    if (failed[0] !== undefined) throw stageError("SEARCH", failed[0], searchCredits);
     return { evidence: [], credits: searchCredits };
   }
 
@@ -168,7 +172,7 @@ export async function researchExploration(
       }),
     }, { ...options, timeoutMs: 60_000 });
   } catch (error) {
-    throw stageError("EXTRACT", error);
+    throw stageError("EXTRACT", error, searchCredits);
   }
   const contents = extracted(response.data);
   const evidence = selected.flatMap((item, index) => {

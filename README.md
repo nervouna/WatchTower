@@ -30,7 +30,7 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 
 流水线通过 Tavily 搜索和提取来源内容，每个来源优先保留一组候选，再在总上限内补充高质量结果。DeepSeek 根据候选证据和历史实体生成结构化中文内容；程序会校验字段长度、候选 ID、来源覆盖、连续性和 URL 等约束。第一次结果不合格时只允许一次修复请求。
 
-“拓展阅读”只接受已发布简报中的 `briefDate` 与 `entityId`，不接受自由搜索词。HTTP 请求只负责幂等触发；独立 Cloudflare Queue 依次完成四类 Tavily Advanced Search、最多十页 Advanced Extract 和 DeepSeek 结构化生成。同一实体匿名共享 24 小时缓存，过期时先返回旧结果再异步刷新。D1 以 UTC 日原子预留 credits，默认每日最多预留 120 credits，每个新任务保守预留 12 credits；失败任务不返还预留。
+“拓展阅读”只接受已发布简报中的 `briefDate` 与 `entityId`，不接受自由搜索词。HTTP 请求只负责幂等触发；独立 Cloudflare Queue 依次完成四类 Tavily Advanced Search、最多十页 Advanced Extract 和 DeepSeek 结构化生成。每条 Search 查询最多 380 个 Unicode code points；部分 Search 成功时继续研究，全部失败或 Extract 失败时保留真实阶段错误并按队列策略重试或终止。DeepSeek 的结构、字段、长度、引用和 URL 约束会完整写入 prompt，第一次结构校验失败后只修复一次。合法单域名引用发布为 `partial`；固定板块齐全且引用至少两个域名时才为 `complete`。模型阶段失败会保留已有 evidence，后续人工触发直接重跑 DeepSeek；真正零证据不会保存空 evidence。同一实体匿名共享 24 小时缓存，过期时先返回旧结果再异步刷新。D1 以 UTC 日原子预留 credits，默认每日最多预留 120 credits，每个新任务保守预留 12 credits；失败任务不返还预留，实际 Tavily credits 与 DeepSeek tokens 按调用累计。
 
 发布门禁以内容为准：除 `collect` 外，只要目标日期已经保存至少一条可用规范化候选，就可以进入生成流程；候选既可以来自当前阶段，也可以来自当天较早阶段保存的证据。四个来源全部成功时状态为 `complete`，否则为 `partial` 并保留缺失来源。来源数量只描述完整度，不决定能否发布。零候选不会调用模型，模型结果为零条目或未通过验证时也绝不写入简报。同一阶段可安全重试；如果最终生成失败，已有的有效草稿会被保留；如果候选证据没有变化，则不会重复调用模型。
 
@@ -82,7 +82,7 @@ cp .env.example .env
 
 Auth0 issuer、audience、tenant domain 和三个公开 client ID 配置在 `wrangler.jsonc`。这些值不是秘密；Apple private key 只保存在 Apple/Auth0 配置中，不进入仓库或 Worker。
 
-探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产环境已启用探索入口，`env.dev` 仍保持 `ITEM_EXPLORATION_ENABLED=false`。
+探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产环境已启用探索入口，`env.dev` 仍保持 `ITEM_EXPLORATION_ENABLED=false`。当前查询与 prompt 合约版本分别为 `exploration-v2-bounded` 和 `exploration-v2-contract`。
 
 ### 3. 初始化本地数据库
 

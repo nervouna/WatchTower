@@ -25,6 +25,8 @@ export interface ExplorationRow {
   expires_at: string | null;
   retry_at: string | null;
   last_error_code: string | null;
+  tavily_credits: number;
+  deepseek_tokens: number;
 }
 
 export interface ExplorationJob {
@@ -94,7 +96,7 @@ export async function getExplorationRow(db: D1Database, entityId: string): Promi
   return db.prepare(
     `SELECT entity_id, title, status, quality, active_job_id, lease_expires_at, attempt_count,
             content_json, source_catalog_json, evidence_json, generated_at, expires_at,
-            prompt_version, query_version, retry_at, last_error_code
+            prompt_version, query_version, retry_at, last_error_code, tavily_credits, deepseek_tokens
      FROM item_explorations WHERE entity_id = ?`,
   ).bind(entityId).first<ExplorationRow>();
 }
@@ -244,6 +246,37 @@ export async function saveExplorationEvidence(
   ]);
 }
 
+export async function recordExplorationResearchUsage(
+  db: D1Database,
+  job: ExplorationJob,
+  credits: number,
+  now: string,
+): Promise<void> {
+  if (credits <= 0) return;
+  await db.batch([
+    db.prepare(
+      `UPDATE item_explorations SET tavily_credits = tavily_credits + ?, query_version = 'exploration-v2-bounded',
+         updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
+    ).bind(credits, now, job.entityId, job.jobId),
+    db.prepare(
+      `UPDATE exploration_daily_usage SET used_credits = used_credits + ?, updated_at = ? WHERE usage_date = ?`,
+    ).bind(credits, now, now.slice(0, 10)),
+  ]);
+}
+
+export async function recordExplorationSynthesisUsage(
+  db: D1Database,
+  job: ExplorationJob,
+  tokens: number,
+  now: string,
+): Promise<void> {
+  if (tokens <= 0) return;
+  await db.prepare(
+    `UPDATE item_explorations SET deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v2-contract',
+       updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
+  ).bind(tokens, now, job.entityId, job.jobId).run();
+}
+
 export async function readyExploration(
   db: D1Database,
   job: ExplorationJob,
@@ -256,7 +289,8 @@ export async function readyExploration(
       `UPDATE item_explorations SET status = 'ready', quality = ?, content_json = ?,
          source_catalog_json = ?, evidence_json = NULL, generated_at = ?, expires_at = ?,
          active_job_id = NULL, lease_expires_at = NULL, retry_at = NULL, last_error_code = NULL,
-         deepseek_tokens = ?, updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
+         deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v2-contract',
+         updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
     ).bind(result.quality, JSON.stringify(result.sections), JSON.stringify(result.sources), generatedAt,
       expiresAt, result.tokens, generatedAt, job.entityId, job.jobId),
     db.prepare(
@@ -286,7 +320,7 @@ export async function failExploration(
 ): Promise<void> {
   await db.batch([
     db.prepare(
-      `UPDATE item_explorations SET status = 'failed', evidence_json = NULL, active_job_id = NULL,
+      `UPDATE item_explorations SET status = 'failed', active_job_id = NULL,
          lease_expires_at = NULL, retry_at = ?, last_error_code = ?, updated_at = ?
        WHERE entity_id = ? AND active_job_id = ?`,
     ).bind(retryAt, errorCode, now, job.entityId, job.jobId),

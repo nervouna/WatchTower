@@ -31,6 +31,9 @@ Inspect the affected code and its consumers before changing behavior:
 - Treat every external and model response as untrusted. Preserve retries, timeouts, URL normalization, candidate/entity ID validation, field limits, source quotas, continuity checks, and exactly one model-repair attempt.
 - Never accept model-created URLs. Hydrate public links only from normalized candidate evidence.
 - Apply feedback before source quotas: exclude `irrelevant`, deprioritize `uninteresting`, and prioritize material updates for `follow`.
+- Keep exploration Search queries within the provider limit using Unicode-safe truncation. Continue on partial Search success, but preserve stable Search or Extract stage errors when research did not produce usable evidence.
+- Keep the exploration prompt contract synchronized with every validator field, key, length, array, citation, source-ID, and URL rule. A valid single-domain result is `partial`; only complete fixed sections citing at least two domains are `complete`.
+- Preserve non-empty exploration evidence across synthesis retries and terminal model failures so a later trigger can skip Tavily. Never persist an empty evidence array, and accumulate actual Tavily credits and DeepSeek tokens across attempts.
 
 ## Preserve runtime, data, and API contracts
 

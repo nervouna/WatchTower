@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExplorationSource } from "../src/domain/types";
+import type { ExplorationSections, ExplorationSource } from "../src/domain/types";
 import { validateExplorationOutput } from "../src/exploration/validation";
 
 const sources: ExplorationSource[] = [
@@ -7,7 +7,7 @@ const sources: ExplorationSource[] = [
   { id: "source_02", title: "Review", url: "https://review.example/post", domain: "review.example", queryKind: "perspectives" },
 ];
 
-function valid() {
+function valid(): ExplorationSections {
   return {
     overview: { text: "这是一个有充分公开资料支持的项目背景说明，涵盖本次变化、核心能力以及为什么此刻值得关注。", sourceIds: ["source_01", "source_02"] },
     relatedProducts: [],
@@ -20,6 +20,20 @@ function valid() {
 describe("exploration output validation", () => {
   it("accepts cited partial output and derives partial quality", () => {
     expect(validateExplorationOutput(valid(), sources)).toMatchObject({ ok: true, quality: "partial" });
+  });
+
+  it("accepts a structurally valid single-domain result as partial", () => {
+    const singleDomain = valid();
+    singleDomain.overview.sourceIds = ["source_01"];
+    singleDomain.perspectives[0]!.sourceIds = ["source_01"];
+    expect(validateExplorationOutput(singleDomain, [sources[0]!])).toMatchObject({ ok: true, quality: "partial" });
+  });
+
+  it("marks complete fixed sections with citations from two domains as complete", () => {
+    const complete = valid();
+    complete.relatedProducts = [{ name: "替代品", relation: "相近定位", summary: "该产品面向相似需求，但其集成方式和目标用户存在明确差异。", sourceIds: ["source_01"] }];
+    complete.industry = { text: "它处在开发工具自动化采用持续扩大的行业趋势中。", sourceIds: ["source_02"] };
+    expect(validateExplorationOutput(complete, sources)).toMatchObject({ ok: true, quality: "complete" });
   });
 
   it("rejects unknown source IDs, uncited claims, URL fields, and overlong text", () => {
