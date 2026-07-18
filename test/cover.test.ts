@@ -5,6 +5,7 @@ import {
   COVER_PROMPT_MAX_CHARS,
   COVER_PROMPT_TARGET_CHARS,
   COVER_PROMPT_VERSION,
+  FalProviderError,
   generateCoverImage,
   type FalRequestTracking,
 } from "../src/cover/fal";
@@ -87,8 +88,50 @@ describe("fal podcast cover generation", () => {
   it("rejects an oversized prompt before submitting to fal", async () => {
     const fetcher = vi.fn<typeof fetch>();
     await expect(generateCoverImage("secret", "😀".repeat(COVER_PROMPT_MAX_CHARS + 1), { fetcher }))
-      .rejects.toThrow("FAL_PROMPT_TOO_LONG");
+      .rejects.toMatchObject({ message: "FAL_PROMPT_TOO_LONG", retryable: false });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("maps an asynchronous fal prompt validation response to a terminal safe error", async () => {
+    const rejectedPrompt = "sensitive prompt content";
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ status: "COMPLETED" }))
+      .mockResolvedValueOnce(Response.json({
+        detail: [{
+          type: "string_too_long",
+          loc: ["body", "prompt"],
+          msg: "String should have at most 1000 characters",
+          input: rejectedPrompt,
+          ctx: { max_length: 1000 },
+        }],
+      }, { status: 422 }));
+
+    const error = await generateCoverImage("secret", "valid prompt", { request: tracking, fetcher, pollIntervalMs: 0 })
+      .then(() => null, (reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(FalProviderError);
+    expect(error).toMatchObject({ message: "FAL_PROMPT_TOO_LONG", status: 422, retryable: false });
+    expect(String(error)).not.toContain(rejectedPrompt);
+  });
+
+  it.each([
+    [400, false],
+    [408, true],
+    [429, true],
+    [500, true],
+  ])("classifies fal submit HTTP %i retryability", async (status, retryable) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("provider error", { status }));
+    await expect(generateCoverImage("secret", "valid prompt", { fetcher }))
+      .rejects.toMatchObject({ message: `FAL_SUBMIT_FAILED_HTTP_${String(status)}`, status, retryable });
+  });
+
+  it("bounds untrusted fal error bodies and keeps only the stable HTTP code", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ status: "COMPLETED" }))
+      .mockResolvedValueOnce(Response.json({ detail: [{ input: "x".repeat(40_000) }] }, { status: 422 }));
+
+    await expect(generateCoverImage("secret", "valid prompt", { request: tracking, fetcher, pollIntervalMs: 0 }))
+      .rejects.toMatchObject({ message: "FAL_RESULT_FAILED_HTTP_422", status: 422, retryable: false });
   });
 
   it("submits to the durable queue, persists the request id, and downloads a validated image", async () => {

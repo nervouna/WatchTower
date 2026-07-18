@@ -5,6 +5,7 @@ export const COVER_PROMPT_VERSION = "podcast-cover-v2-bounded";
 export const COVER_PROMPT_MAX_CHARS = 1_000;
 export const COVER_PROMPT_TARGET_CHARS = 980;
 const FAL_QUEUE_BASE = `https://queue.fal.run/${COVER_MODEL}`;
+const MAX_ERROR_BODY_BYTES = 32 * 1024;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -28,12 +29,76 @@ export interface GeneratedCoverImage {
   contentType: "image/jpeg" | "image/png" | "image/webp";
 }
 
+export class FalProviderError extends Error {
+  constructor(message: string, readonly retryable: boolean, readonly status?: number) {
+    super(message);
+    this.name = "FalProviderError";
+  }
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+async function limitedErrorPayload(response: Response): Promise<Record<string, unknown> | null> {
+  const declared = Number(response.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > MAX_ERROR_BODY_BYTES) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  async function readNext(): Promise<boolean> {
+    const result = await reader.read();
+    if (result.done) return true;
+    total += result.value.byteLength;
+    if (total > MAX_ERROR_BODY_BYTES) {
+      await reader.cancel();
+      return false;
+    }
+    chunks.push(result.value);
+    return readNext();
+  }
+  if (!(await readNext())) return null;
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return record(JSON.parse(new TextDecoder().decode(bytes)) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+function promptTooLong(payload: Record<string, unknown> | null): boolean {
+  if (!payload || !Array.isArray(payload.detail)) return false;
+  return payload.detail.some((value) => {
+    const detail = record(value);
+    if (!detail || !Array.isArray(detail.loc) || detail.loc.join(".") !== "body.prompt") return false;
+    if (detail.type === "string_too_long") return true;
+    return typeof detail.msg === "string" && /at most\s+\d+\s+characters/iu.test(detail.msg);
+  });
+}
+
+function retryableHttpStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 409 || status === 425 || status === 429;
+}
+
+async function httpError(response: Response, code: string): Promise<FalProviderError> {
+  const payload = await limitedErrorPayload(response);
+  if ((response.status === 400 || response.status === 422) && promptTooLong(payload)) {
+    return new FalProviderError("FAL_PROMPT_TOO_LONG", false, response.status);
+  }
+  return new FalProviderError(`${code}_HTTP_${String(response.status)}`, retryableHttpStatus(response.status), response.status);
+}
+
 async function json(response: Response, code: string): Promise<Record<string, unknown>> {
-  if (!response.ok) throw new Error(`${code}_HTTP_${String(response.status)}`);
+  if (!response.ok) throw await httpError(response, code);
   try {
     const value: unknown = await response.json();
     const result = record(value);
@@ -175,7 +240,7 @@ async function pause(milliseconds: number): Promise<void> {
 }
 
 export async function generateCoverImage(apiKey: string, prompt: string, options: GenerateOptions = {}): Promise<GeneratedCoverImage> {
-  if (codePointLength(prompt) > COVER_PROMPT_MAX_CHARS) throw new Error("FAL_PROMPT_TOO_LONG");
+  if (codePointLength(prompt) > COVER_PROMPT_MAX_CHARS) throw new FalProviderError("FAL_PROMPT_TOO_LONG", false);
   const fetcher = options.fetcher ?? fetch;
   let tracking = options.request ? {
     requestId: options.request.requestId,

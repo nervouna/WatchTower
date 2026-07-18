@@ -1,4 +1,4 @@
-import { buildCoverPrompt, COVER_MODEL, COVER_PROMPT_VERSION, generateCoverImage } from "./fal";
+import { buildCoverPrompt, COVER_MODEL, COVER_PROMPT_VERSION, FalProviderError, generateCoverImage } from "./fal";
 import {
   claimBriefCover,
   failBriefCover,
@@ -11,6 +11,13 @@ import {
 import type { BriefPayload } from "../domain/types";
 
 export interface BriefCoverJob { kind: "brief-cover"; briefDate: string; contentHash: string }
+
+export class CoverProcessingError extends Error {
+  constructor(message: string, readonly retryable: boolean, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CoverProcessingError";
+  }
+}
 
 function enabled(value: unknown): boolean { return value === "true"; }
 
@@ -113,6 +120,9 @@ export async function processBriefCoverJob(
     return "ready";
   } catch (error) {
     const errorCode = stableError(error);
+    const processingError = error instanceof CoverProcessingError
+      ? error
+      : new CoverProcessingError(errorCode, error instanceof FalProviderError ? error.retryable : true, { cause: error });
     await failBriefCover(env.DB, job.briefDate, job.contentHash, errorCode, new Date().toISOString());
     console.error(JSON.stringify({
       event: "brief_cover_failed",
@@ -123,7 +133,7 @@ export async function processBriefCoverJob(
       model: COVER_MODEL,
       errorCode,
     }));
-    throw error;
+    throw processingError;
   }
 }
 

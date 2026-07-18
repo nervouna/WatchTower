@@ -2,7 +2,7 @@ import { resolveScheduledRun } from "./domain/schedule";
 import { handleRequest } from "./http/router";
 import { runPipelineStage } from "./ingestion/pipeline";
 import { enqueueBriefAudio, processBriefAudioJob, type BriefAudioJob } from "./audio/jobs";
-import { enqueueBriefCover, processBriefCoverJob, type BriefCoverJob } from "./cover/jobs";
+import { CoverProcessingError, enqueueBriefCover, processBriefCoverJob, type BriefCoverJob } from "./cover/jobs";
 import {
   enqueueBriefPush,
   abandonBriefPushJob,
@@ -19,6 +19,12 @@ import {
   retryExplorationJob,
   type ExplorationJob,
 } from "./exploration/jobs";
+
+export function isTerminalQueueFailure(error: unknown, attempts: number): boolean {
+  return attempts >= 3 ||
+    (error instanceof ExplorationProcessingError && !error.retryable) ||
+    (error instanceof CoverProcessingError && !error.retryable);
+}
 
 export default {
   fetch(request, env): Promise<Response> {
@@ -92,7 +98,7 @@ export default {
         }
         message.ack();
       } catch (error) {
-        const terminal = message.attempts >= 3 || (error instanceof ExplorationProcessingError && !error.retryable);
+        const terminal = isTerminalQueueFailure(error, message.attempts);
         if (terminal) {
           if (batch.queue === PUSH_QUEUE_NAME) await abandonBriefPushJob(env.DB, message.body as BriefPushJob);
           if (batch.queue === EXPLORATION_QUEUE_NAME) await abandonExplorationJob(env.DB, message.body as ExplorationJob, error);
