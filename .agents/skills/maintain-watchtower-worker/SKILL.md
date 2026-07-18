@@ -25,7 +25,8 @@ Inspect the affected code and its consumers before changing behavior:
 - Keep Hacker News, Product Hunt, GitHub, and Kickstarter aligned across `SOURCE_KINDS`, URL normalization, Tavily queries, D1 constraints, UI labels, Wrangler behavior, and tests.
 - Keep `collect`, `draft`, `final`, and `recovery` cron expressions aligned between `wrangler.jsonc` and `src/domain/schedule.ts`.
 - Keep scheduled stages idempotent and skip an already successful stage.
-- Publish only after at least three sources succeed. Use `complete` only for all four sources; otherwise use `partial` and retain missing sources.
+- Gate publication on usable content, not source count. For `draft`, `final`, and `recovery`, generate when the target date has at least one stored normalized candidate, including evidence saved by an earlier stage. Never call the model with zero candidates or persist a generated brief with zero items.
+- Use `complete` only when all four sources succeeded; otherwise use `partial` and retain missing sources. Source success describes completeness and observability, not publication eligibility.
 - Preserve an existing valid brief when a later model call fails. Do not call the model again when refreshed evidence is unchanged.
 - Treat every external and model response as untrusted. Preserve retries, timeouts, URL normalization, candidate/entity ID validation, field limits, source quotas, continuity checks, and exactly one model-repair attempt.
 - Never accept model-created URLs. Hydrate public links only from normalized candidate evidence.
@@ -42,7 +43,8 @@ Inspect the affected code and its consumers before changing behavior:
 - Return `401` for missing or invalid credentials, `403` for an authenticated user without the required capability, and retryable `503` for unavailable Auth0 or JWKS infrastructure. Return `Cache-Control: no-store` and intentionally omit public CORS on every protected response.
 - Derive account deletion targets only from the verified token subject. Never accept a client-selected user ID or reintroduce a shared fixed credential.
 - Accept feedback only for a valid entity in the claimed published brief. Keep `follow`, `irrelevant`, and `uninteresting` synchronized across types, storage, router, frontend, migrations, and tests.
-- Keep audio artifacts in R2 and asynchronous audio/push work on the configured queues. Preserve queue retry behavior, APNs environment/topic matching, registration security, and public payload compatibility.
+- Keep audio artifacts in R2 and asynchronous audio/push work on the configured queues. Preserve queue retry behavior, APNs environment/topic matching, registration security, and public payload compatibility. For 1-4 item briefs, narrate every ranked item and apply the matching short-audio duration profile; keep the 5-7 item selection behavior for larger briefs.
+- Honor `BRIEF_PUSH_ENABLED` before any push persistence or queue send so controlled recovery runs can regenerate content without sending a late notification.
 
 ## Change schema and configuration safely
 
