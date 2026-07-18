@@ -49,7 +49,7 @@ export interface PipelineInvocation {
 export type PipelineResult =
   | { outcome: "idempotent-skip" | "complete-noop" }
   | { outcome: "collected"; successfulSources: number }
-  | { outcome: "insufficient-sources"; successfulSources: number }
+  | { outcome: "no-candidates"; successfulSources: number }
   | { outcome: "published"; status: BriefStatus; successfulSources: number }
   | { outcome: "unchanged-noop"; status: BriefStatus; successfulSources: number }
   | { outcome: "kept-existing" | "model-failed"; successfulSources: number; errorCode: string };
@@ -279,15 +279,16 @@ export async function runPipelineStage(
     return { outcome: "collected", successfulSources };
   }
 
-  if (successfulSources < 3) {
+  const candidates = await getCandidates(env.DB, invocation.targetDate);
+  if (candidates.length === 0) {
     await finishRun(env.DB, run.id, {
       status: "failed",
       sourceStatus,
-      errorCode: "INSUFFICIENT_SOURCES",
+      errorCode: "NO_USABLE_CANDIDATES",
       usageCredits: refresh.credits,
       finishedAt: new Date().toISOString(),
     });
-    return { outcome: "insufficient-sources", successfulSources };
+    return { outcome: "no-candidates", successfulSources };
   }
 
   const desiredStatus: BriefStatus = missingSources.length === 0 ? "complete" : "partial";
@@ -304,9 +305,9 @@ export async function runPipelineStage(
   }
 
   try {
-    const candidates = await getCandidates(env.DB, invocation.targetDate);
     const entities = await getEntityCatalog(env.DB, invocation.targetDate);
     const generated = await dependencies.generate(env.DEEPSEEK_API_KEY, candidates, entities);
+    if (generated.brief.items.length === 0) throw new Error("EMPTY_GENERATED_BRIEF");
     const status = desiredStatus;
     await replaceBrief(
       env.DB,

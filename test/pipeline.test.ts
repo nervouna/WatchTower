@@ -87,14 +87,24 @@ describe("scheduled pipeline", () => {
     expect(row).toEqual({ status: "partial", publish_at: "2026-07-16T00:00:00.000Z" });
   });
 
-  it("does not publish with fewer than three successful sources", async () => {
+  it("publishes a partial brief when only Hacker News and Product Hunt succeed", async () => {
     const result = await runPipelineStage(
       env,
       { stage: "final", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 23, 30) },
       dependencies(["github", "kickstarter"]),
     );
-    expect(result.outcome).toBe("insufficient-sources");
-    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(0);
+    expect(result).toMatchObject({ outcome: "published", status: "partial", successfulSources: 2 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(1);
+  });
+
+  it("publishes a partial brief from one usable source", async () => {
+    const result = await runPipelineStage(
+      env,
+      { stage: "final", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 23, 30) },
+      dependencies(["product-hunt", "github", "kickstarter"]),
+    );
+    expect(result).toMatchObject({ outcome: "published", status: "partial", successfulSources: 1 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(1);
   });
 
   it("does not count empty normalized search results as successful sources", async () => {
@@ -104,8 +114,44 @@ describe("scheduled pipeline", () => {
       { stage: "final", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 23, 30) },
       deps,
     );
-    expect(result).toMatchObject({ outcome: "insufficient-sources", successfulSources: 0 });
+    expect(result).toMatchObject({ outcome: "no-candidates", successfulSources: 0 });
     expect(deps.generate).not.toHaveBeenCalled();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(0);
+    expect(await env.DB.prepare("SELECT error_code FROM ingestion_runs ORDER BY id DESC LIMIT 1").first("error_code"))
+      .toBe("NO_USABLE_CANDIDATES");
+  });
+
+  it("uses candidates saved by collect when every draft refresh fails", async () => {
+    await runPipelineStage(
+      env,
+      { stage: "collect", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 21) },
+      dependencies(),
+    );
+    const deps = dependencies(["hacker-news", "product-hunt", "github", "kickstarter"]);
+    const result = await runPipelineStage(
+      env,
+      { stage: "draft", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 22, 30) },
+      deps,
+    );
+    expect(result).toMatchObject({ outcome: "published", status: "partial", successfulSources: 0 });
+    expect(vi.mocked(deps.generate).mock.calls[0]?.[1]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ targetDate: "2026-07-16" })]),
+    );
+  });
+
+  it("never persists a generated brief with zero items", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.generate).mockResolvedValue({
+      brief: { ...generated, items: [] },
+      repaired: false,
+      totalTokens: 100,
+    });
+    const result = await runPipelineStage(
+      env,
+      { stage: "draft", targetDate: "2026-07-16", scheduledTime: Date.UTC(2026, 6, 15, 22, 30) },
+      deps,
+    );
+    expect(result).toMatchObject({ outcome: "model-failed", errorCode: "EMPTY_GENERATED_BRIEF" });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM briefs").first("count")).toBe(0);
   });
 
