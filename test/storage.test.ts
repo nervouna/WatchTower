@@ -129,6 +129,10 @@ describe("D1 repository", () => {
     const retried = await claimExplorationWork(env.DB, job, "2026-07-16T01:04:00.000Z", "2026-07-16T01:14:00.000Z");
     expect(savedEvidence(retried!)).toEqual(evidence);
     expect((await getExplorationRow(env.DB, entityId))?.attempt_count).toBe(2);
+    expect(await getExplorationRow(env.DB, entityId)).toMatchObject({
+      prompt_version: "exploration-v2-contract",
+      query_version: "exploration-v2-bounded",
+    });
   });
 
   it("recovers an exploration whose active lease expired", async () => {

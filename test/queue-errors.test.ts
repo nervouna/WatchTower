@@ -17,4 +17,9 @@ describe("queue failure classification", () => {
     expect(isTerminalQueueFailure(new ExplorationProcessingError("EXPLORATION_TARGET_NOT_FOUND", false), 1)).toBe(true);
     expect(isTerminalQueueFailure(new Error("NETWORK_ERROR"), 3)).toBe(true);
   });
+
+  it("keeps safe Tavily stage details and terminates non-rate-limit client errors", () => {
+    expect(isTerminalQueueFailure(new ExplorationProcessingError("TAVILY_SEARCH_HTTP_400", false), 1)).toBe(true);
+    expect(isTerminalQueueFailure(new ExplorationProcessingError("TAVILY_EXTRACT_HTTP_429", true), 1)).toBe(false);
+  });
 });

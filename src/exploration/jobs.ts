@@ -18,7 +18,13 @@ export class ExplorationProcessingError extends Error {
 }
 
 function errorCode(error: unknown): string {
-  return error instanceof Error ? error.message.split(":", 1)[0] ?? "EXPLORATION_FAILED" : "EXPLORATION_FAILED";
+  return error instanceof Error ? error.message : "EXPLORATION_FAILED";
+}
+
+function retryableError(code: string): boolean {
+  if (code.startsWith("DEEPSEEK_EXPLORATION_VALIDATION_FAILED:")) return false;
+  const clientError = /^TAVILY_(?:SEARCH|EXTRACT)_HTTP_(4\d\d)$/u.exec(code)?.[1];
+  return clientError === undefined || clientError === "429";
 }
 
 export async function processExplorationJob(
@@ -78,7 +84,7 @@ export async function processExplorationJob(
   } catch (error) {
     if (error instanceof ExplorationProcessingError) throw error;
     const code = errorCode(error);
-    throw new ExplorationProcessingError(code, code !== "DEEPSEEK_EXPLORATION_VALIDATION_FAILED");
+    throw new ExplorationProcessingError(code, retryableError(code));
   }
 }
 

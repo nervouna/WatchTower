@@ -8,6 +8,8 @@ import { normalizePublicUrl } from "../ingestion/urls";
 
 const SEARCH_ENDPOINT = "https://api.tavily.com/search";
 const EXTRACT_ENDPOINT = "https://api.tavily.com/extract";
+export const EXPLORATION_QUERY_VERSION = "exploration-v2-bounded";
+const MAX_QUERY_CODE_POINTS = 380;
 
 interface RawSearchResult { title: string; url: string; content: string; score: number }
 interface Candidate extends RawSearchResult { queryKind: ExplorationQueryKind; domain: string }
@@ -29,20 +31,28 @@ function results(value: unknown): RawSearchResult[] {
 }
 
 export function explorationQueries(seed: ExplorationSeed): Record<ExplorationQueryKind, string> {
-  const subject = [
-    seed.title,
-    seed.tags.join(" "),
-    seed.summary.slice(0, 240),
-    seed.whyItMatters.slice(0, 120),
-    seed.canonicalUrl,
-    ...seed.sourceUrls.slice(0, 4),
-  ].filter(Boolean).join(" ");
+  const canonicalLocation = (() => {
+    try {
+      const url = new URL(seed.canonicalUrl);
+      return `${url.hostname}${url.pathname}`;
+    } catch {
+      return "";
+    }
+  })();
+  const subject = [seed.title, seed.tags.slice(0, 4).join(" "), canonicalLocation,
+    Array.from(seed.summary.trim()).slice(0, 120).join("")].filter(Boolean).join(" ");
+  const bounded = (intent: string): string => Array.from(`${intent} ${subject}`).slice(0, MAX_QUERY_CODE_POINTS).join("");
   return {
-    context: `${subject} official documentation background latest release changes`,
-    products: `${subject} alternatives competitors complementary products comparison`,
-    perspectives: `${subject} review community discussion criticism user experience`,
-    industry: `${subject} industry trend adoption market position ecosystem impact`,
+    context: bounded("official documentation background latest release changes"),
+    products: bounded("alternatives competitors complementary products comparison"),
+    perspectives: bounded("review community discussion criticism user experience"),
+    industry: bounded("industry trend adoption market position ecosystem impact"),
   };
+}
+
+function stageError(stage: "SEARCH" | "EXTRACT", error: unknown): Error {
+  const code = error instanceof Error ? (error.message.split(":", 1)[0] ?? "UNKNOWN_ERROR") : "UNKNOWN_ERROR";
+  return new Error(`TAVILY_${stage}_${code}`);
 }
 
 async function search(
@@ -131,14 +141,18 @@ export async function researchExploration(
     (Object.entries(queries) as Array<[ExplorationQueryKind, string]>).map(([kind, query]) => search(apiKey, kind, query, options)),
   );
   const successful = searches.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  const failed: unknown[] = [];
+  for (const result of searches) if (result.status === "rejected") failed.push(result.reason as unknown);
   const searchCredits = successful.reduce((total, result) => total + result.credits, 0);
   const selected = selectExplorationPages(successful.flatMap((result) => result.candidates));
-  if (selected.length === 0) return { evidence: [], credits: searchCredits };
+  if (selected.length === 0) {
+    if (failed[0] !== undefined) throw stageError("SEARCH", failed[0]);
+    return { evidence: [], credits: searchCredits };
+  }
 
-  let extractData: unknown;
-  let extractCredits: number;
+  let response;
   try {
-    const response = await fetchJsonWithRetry<unknown>(EXTRACT_ENDPOINT, {
+    response = await fetchJsonWithRetry<unknown>(EXTRACT_ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -153,12 +167,10 @@ export async function researchExploration(
         include_usage: true,
       }),
     }, { ...options, timeoutMs: 60_000 });
-    extractData = response.data;
-    extractCredits = credits(response.data);
-  } catch {
-    return { evidence: [], credits: searchCredits };
+  } catch (error) {
+    throw stageError("EXTRACT", error);
   }
-  const contents = extracted(extractData);
+  const contents = extracted(response.data);
   const evidence = selected.flatMap((item, index) => {
     const snippet = contents.get(item.url);
     return snippet ? [{
@@ -171,7 +183,7 @@ export async function researchExploration(
       score: item.score,
     }] : [];
   });
-  return { evidence, credits: searchCredits + extractCredits };
+  return { evidence, credits: searchCredits + credits(response.data) };
 }
 
 export function hasEnoughExplorationEvidence(evidence: readonly ExplorationEvidenceSource[]): boolean {

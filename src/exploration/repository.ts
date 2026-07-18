@@ -19,6 +19,8 @@ export interface ExplorationRow {
   content_json: string | null;
   source_catalog_json: string | null;
   evidence_json: string | null;
+  prompt_version: string;
+  query_version: string;
   generated_at: string | null;
   expires_at: string | null;
   retry_at: string | null;
@@ -92,7 +94,7 @@ export async function getExplorationRow(db: D1Database, entityId: string): Promi
   return db.prepare(
     `SELECT entity_id, title, status, quality, active_job_id, lease_expires_at, attempt_count,
             content_json, source_catalog_json, evidence_json, generated_at, expires_at,
-            retry_at, last_error_code
+            prompt_version, query_version, retry_at, last_error_code
      FROM item_explorations WHERE entity_id = ?`,
   ).bind(entityId).first<ExplorationRow>();
 }
@@ -147,13 +149,14 @@ export async function claimExplorationTrigger(
 ): Promise<boolean> {
   const inserted = await db.prepare(
     `INSERT OR IGNORE INTO item_explorations (
-       entity_id, title, status, active_job_id, lease_expires_at, created_at, updated_at
-     ) VALUES (?, ?, 'queued', ?, ?, ?, ?)`,
+       entity_id, title, status, active_job_id, lease_expires_at, prompt_version, query_version, created_at, updated_at
+     ) VALUES (?, ?, 'queued', ?, ?, 'exploration-v2-contract', 'exploration-v2-bounded', ?, ?)`,
   ).bind(seed.entityId, seed.title, jobId, leaseExpiresAt, now, now).run();
   if (inserted.meta.changes > 0) return true;
   const claimed = await db.prepare(
     `UPDATE item_explorations
      SET title = ?, status = 'queued', active_job_id = ?, lease_expires_at = ?,
+         prompt_version = 'exploration-v2-contract', query_version = 'exploration-v2-bounded',
          retry_at = NULL, last_error_code = NULL, updated_at = ?
      WHERE entity_id = ?
        AND (active_job_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= ?)
@@ -231,7 +234,8 @@ export async function saveExplorationEvidence(
   await db.batch([
     db.prepare(
       `UPDATE item_explorations SET status = 'synthesizing', evidence_json = ?,
-         tavily_credits = ?, updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
+         tavily_credits = tavily_credits + ?, query_version = 'exploration-v2-bounded',
+         updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
     ).bind(JSON.stringify(evidence), credits, now, job.entityId, job.jobId),
     db.prepare(
       `UPDATE exploration_daily_usage SET used_credits = used_credits + ?, updated_at = ?
