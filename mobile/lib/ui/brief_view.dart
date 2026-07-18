@@ -88,7 +88,7 @@ class _BriefViewState extends State<BriefView> {
             _Notice(
               icon: Icons.info_outline,
               text:
-                  '部分简报 · ${brief.missingSources.map((source) => sourceNames[source] ?? source).join('、')} 暂缺',
+                  '${brief.missingSources.map((source) => sourceNames[source] ?? source).join('、')} 暂缺',
             ),
           Card(
             child: Padding(

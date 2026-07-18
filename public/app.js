@@ -506,7 +506,7 @@ async function renderBrief(brief, isLatest) {
   if (brief.status === "partial") {
     const partial = element("div", "notice notice-partial");
     partial.setAttribute("role", "status");
-    partial.textContent = `部分简报 · ${brief.missingSources.map((source) => sourceNames[source]).join("、")} 暂缺`;
+    partial.textContent = `${brief.missingSources.map((source) => sourceNames[source]).join("、")} 暂缺`;
     notices.push(partial);
   }
 
