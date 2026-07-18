@@ -602,20 +602,27 @@ export async function getBriefCover(db: D1Database, date: string): Promise<Brief
   return db.prepare("SELECT * FROM brief_covers WHERE brief_date = ?").bind(date).first<BriefCoverRow>();
 }
 
-export async function queueBriefCover(db: D1Database, date: string, contentHash: string, now: string): Promise<"queued" | "already-pending" | "already-ready"> {
+export async function queueBriefCover(
+  db: D1Database,
+  date: string,
+  contentHash: string,
+  promptVersion: string,
+  now: string,
+): Promise<"queued" | "already-pending" | "already-ready"> {
   const current = await getBriefCover(db, date);
   if (current?.content_hash === contentHash && current.status === "ready") return "already-ready";
   if (current?.content_hash === contentHash && (current.status === "pending" || current.status === "processing")) return "already-pending";
   await db.prepare(
     `INSERT INTO brief_covers (brief_date, content_hash, status, provider, model, prompt_version, created_at, updated_at)
-     VALUES (?, ?, 'pending', 'fal-ai', 'fal-ai/recraft/v3/text-to-image', 'podcast-cover-v1', ?, ?)
+     VALUES (?, ?, 'pending', 'fal-ai', 'fal-ai/recraft/v3/text-to-image', ?, ?, ?)
      ON CONFLICT(brief_date) DO UPDATE SET content_hash = excluded.content_hash, status = 'pending',
        fal_request_id = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_request_id ELSE NULL END,
        fal_status_url = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_status_url ELSE NULL END,
        fal_response_url = CASE WHEN brief_covers.content_hash = excluded.content_hash THEN brief_covers.fal_response_url ELSE NULL END,
-       object_key = brief_covers.object_key, error_code = NULL, updated_at = excluded.updated_at,
+       object_key = brief_covers.object_key, prompt_version = excluded.prompt_version,
+       error_code = NULL, updated_at = excluded.updated_at,
        generated_at = brief_covers.generated_at`
-  ).bind(date, contentHash, now, now).run();
+  ).bind(date, contentHash, promptVersion, now, now).run();
   return "queued";
 }
 

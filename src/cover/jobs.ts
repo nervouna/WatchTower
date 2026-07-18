@@ -41,7 +41,7 @@ export async function enqueueBriefCover(
   const brief = await getBrief(env.DB, date, now.toISOString());
   if (!brief) return "not-found";
   const contentHash = await briefCoverContentHash(brief);
-  const status = await queueBriefCover(env.DB, date, contentHash, now.toISOString());
+  const status = await queueBriefCover(env.DB, date, contentHash, COVER_PROMPT_VERSION, now.toISOString());
   if (status === "queued") {
     try {
       await env.BRIEF_AUDIO_QUEUE.send({ kind: "brief-cover", briefDate: date, contentHash } satisfies BriefCoverJob);

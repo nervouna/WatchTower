@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildCoverPrompt, generateCoverImage, type FalRequestTracking } from "../src/cover/fal";
+import {
+  buildCoverPrompt,
+  COVER_PROMPT_MAX_CHARS,
+  COVER_PROMPT_TARGET_CHARS,
+  COVER_PROMPT_VERSION,
+  generateCoverImage,
+  type FalRequestTracking,
+} from "../src/cover/fal";
 import type { BriefPayload } from "../src/domain/types";
 
 const brief = {
@@ -31,6 +38,10 @@ function webp(): ArrayBuffer {
   return Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]).buffer;
 }
 
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
 const tracking = {
   requestId: "existing-request",
   statusUrl: "https://queue.fal.run/fal-ai/recraft/requests/existing-request/status",
@@ -44,6 +55,40 @@ describe("fal podcast cover generation", () => {
     expect(prompt).toContain("Radar Cyan");
     expect(prompt).toContain("no words, letters, numbers, logos, or watermarks");
     expect(prompt).toContain("negative space");
+    expect(COVER_PROMPT_VERSION).toBe("podcast-cover-v2-bounded");
+    expect(codePointLength(prompt)).toBeLessThanOrEqual(COVER_PROMPT_TARGET_CHARS);
+  });
+
+  it("keeps long Chinese brief context within the fal prompt budget without splitting Unicode", () => {
+    const longBrief: BriefPayload = {
+      ...brief,
+      headline: `AI 代理与开源模型正在改变开发流程 ${"新信号😀".repeat(40)}`,
+      intro: `本期聚焦开发工具、模型基础设施与产品发现。${"值得持续关注😀".repeat(80)}`,
+      items: Array.from({ length: 5 }, (_, index) => ({
+        ...brief.items[0]!,
+        rank: index + 1,
+        entityId: `entity_${String(index + 1)}`,
+        title: `排名${String(index + 1)}热点 ${"开源工具😀".repeat(30)}`,
+        tags: ["开发工具😀", "人工智能", "产品趋势"],
+      })),
+    };
+
+    const prompt = buildCoverPrompt(longBrief);
+
+    expect(codePointLength(prompt)).toBeLessThanOrEqual(COVER_PROMPT_TARGET_CHARS);
+    expect(prompt).toContain("AI 代理与开源模型正在改变开发流程");
+    expect(prompt).toContain("排名1热点");
+    expect(prompt).toContain("Radar Cyan (#0E7490)");
+    expect(prompt).toContain("negative space");
+    expect(prompt).toContain("no words, letters, numbers, logos, or watermarks");
+    expect(prompt).not.toContain("�");
+  });
+
+  it("rejects an oversized prompt before submitting to fal", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    await expect(generateCoverImage("secret", "😀".repeat(COVER_PROMPT_MAX_CHARS + 1), { fetcher }))
+      .rejects.toThrow("FAL_PROMPT_TOO_LONG");
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("submits to the durable queue, persists the request id, and downloads a validated image", async () => {

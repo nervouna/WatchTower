@@ -159,8 +159,8 @@ describe("D1 repository", () => {
 
   it("hydrates cover states and resumes one fal request idempotently", async () => {
     await replaceBrief(env.DB, briefDraft("2026-07-16"));
-    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:00:00.000Z")).toBe("queued");
-    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "podcast-cover-v2-bounded", "2026-07-16T01:00:00.000Z")).toBe("queued");
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "podcast-cover-v2-bounded", "2026-07-16T01:01:00.000Z")).toBe("already-pending");
     expect((await claimBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:02:00.000Z"))?.attempt_count).toBe(1);
     await saveBriefCoverRequest(env.DB, "2026-07-16", "cover-a", {
       requestId: "fal-request",
@@ -168,8 +168,9 @@ describe("D1 repository", () => {
       responseUrl: "https://queue.fal.run/response",
     }, "2026-07-16T01:03:00.000Z");
     expect((await getBriefCover(env.DB, "2026-07-16"))?.fal_request_id).toBe("fal-request");
+    expect((await getBriefCover(env.DB, "2026-07-16"))?.prompt_version).toBe("podcast-cover-v2-bounded");
     await readyBriefCover(env.DB, "2026-07-16", "cover-a", "briefs/cover.image", "2026-07-16T01:04:00.000Z");
-    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "2026-07-16T01:05:00.000Z")).toBe("already-ready");
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-a", "podcast-cover-v2-bounded", "2026-07-16T01:05:00.000Z")).toBe("already-ready");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toBeNull();
 
     await queueBriefAudio(env.DB, "2026-07-16", "audio-a", "narration-v2-adaptive", "2026-07-16T01:06:00.000Z");
@@ -179,6 +180,15 @@ describe("D1 repository", () => {
       provider: "fal-ai",
       synthetic: true,
     });
+
+    expect(await queueBriefCover(env.DB, "2026-07-16", "cover-b", "podcast-cover-v3", "2026-07-16T01:07:00.000Z")).toBe("queued");
+    expect(await getBriefCover(env.DB, "2026-07-16")).toMatchObject({
+      content_hash: "cover-b",
+      prompt_version: "podcast-cover-v3",
+      fal_request_id: null,
+      fal_status_url: null,
+      fal_response_url: null,
+    });
   });
 
   it("keeps ready audio available when cover generation fails", async () => {
@@ -186,7 +196,7 @@ describe("D1 repository", () => {
     await queueBriefAudio(env.DB, "2026-07-16", "audio", "narration-v2-adaptive", "2026-07-16T01:00:00.000Z");
     await saveBriefAudioScript(env.DB, "2026-07-16", "audio", JSON.stringify({ opening_zh: "开场", items: [], closing_zh: "结尾" }), "2026-07-16T01:01:00.000Z");
     await readyBriefAudio(env.DB, "2026-07-16", "audio", "briefs/audio.wav", 180, "2026-07-16T01:02:00.000Z");
-    await queueBriefCover(env.DB, "2026-07-16", "cover", "2026-07-16T01:03:00.000Z");
+    await queueBriefCover(env.DB, "2026-07-16", "cover", "podcast-cover-v2-bounded", "2026-07-16T01:03:00.000Z");
     await failBriefCover(env.DB, "2026-07-16", "cover", "FAL_GENERATION_FAILED", "2026-07-16T01:04:00.000Z");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({
       status: "ready",

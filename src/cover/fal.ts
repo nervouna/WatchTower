@@ -1,7 +1,9 @@
 import type { BriefPayload } from "../domain/types";
 
 export const COVER_MODEL = "fal-ai/recraft/v3/text-to-image";
-export const COVER_PROMPT_VERSION = "podcast-cover-v1";
+export const COVER_PROMPT_VERSION = "podcast-cover-v2-bounded";
+export const COVER_PROMPT_MAX_CHARS = 1_000;
+export const COVER_PROMPT_TARGET_CHARS = 980;
 const FAL_QUEUE_BASE = `https://queue.fal.run/${COVER_MODEL}`;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -47,21 +49,74 @@ function auth(apiKey: string): HeadersInit {
   return { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" };
 }
 
+function normalized(value: string): string {
+  return value.replaceAll(/\s+/gu, " ").trim();
+}
+
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
 function clip(value: string, length: number): string {
-  return value.replaceAll(/\s+/gu, " ").trim().slice(0, length);
+  return Array.from(normalized(value)).slice(0, Math.max(0, length)).join("");
+}
+
+function signalText(title: string, tags: string[], budget: number): string {
+  const clippedTitle = clip(title, 80);
+  if (budget <= 0 || clippedTitle.length === 0) return "";
+  const tagText = tags.slice(0, 2).map((tag) => clip(tag, 24)).filter(Boolean).join(", ");
+  const withTags = tagText ? `${clippedTitle} (${tagText})` : clippedTitle;
+  return codePointLength(withTags) <= budget ? withTags : clip(clippedTitle, budget);
 }
 
 export function buildCoverPrompt(brief: BriefPayload): string {
-  const signals = brief.items.slice(0, 5).map((item) => `${clip(item.title, 100)} (${item.tags.slice(0, 3).join(", ")})`).join("; ");
-  return [
-    "Create a square editorial podcast cover illustration for WatchTower, a calm and precise daily Chinese technology and product intelligence briefing.",
-    `Today's editorial theme: ${clip(brief.headline, 180)}.`,
-    `Context: ${clip(brief.intro, 320)}.`,
-    signals ? `Key signals: ${signals}.` : "Focus on trustworthy technology signals and product discovery.",
-    "Use a modern digital editorial illustration with one clear focal point, radar and signal-scanning motifs, cool neutral surfaces, and Radar Cyan (#0E7490) as the only decorative accent.",
-    "Keep generous, calm negative space in the upper-left and center-left for a client-rendered title overlay.",
-    "The artwork itself must contain no words, letters, numbers, logos, or watermarks. Do not show UI screenshots, device mockups, borders, or recognizable trademarks.",
+  const opening = "Square editorial podcast cover for WatchTower, a calm, precise Chinese technology and product briefing.";
+  const style = "Modern digital illustration with one focal point, radar and signal-scanning motifs, cool neutral surfaces, and Radar Cyan (#0E7490) as the only decorative accent.";
+  const layout = "Keep generous negative space in the upper-left and center-left for a client-rendered title overlay.";
+  const restrictions = "Artwork must contain no words, letters, numbers, logos, or watermarks; no UI screenshots, device mockups, borders, or recognizable trademarks.";
+  const scaffold = [opening, "Theme: .", "Context: .", "Signals: .", style, layout, restrictions].join(" ");
+  let remaining = COVER_PROMPT_TARGET_CHARS - codePointLength(scaffold);
+
+  const headline = clip(brief.headline, Math.min(140, remaining));
+  remaining -= codePointLength(headline);
+
+  const rankedItems = brief.items.slice(0, 5);
+  const signals: string[] = [];
+  const first = rankedItems[0];
+  if (first && remaining > 0) {
+    const text = signalText(first.title, first.tags, Math.min(120, remaining));
+    if (text) signals.push(text);
+    remaining -= codePointLength(text);
+  } else if (!first && remaining > 0) {
+    const fallback = clip("Trustworthy technology signals and product discovery", Math.min(80, remaining));
+    signals.push(fallback);
+    remaining -= codePointLength(fallback);
+  }
+
+  const intro = clip(brief.intro, Math.min(180, remaining));
+  remaining -= codePointLength(intro);
+
+  for (const item of rankedItems.slice(1)) {
+    if (remaining < 24) break;
+    const separatorLength = signals.length > 0 ? 2 : 0;
+    if (remaining <= separatorLength) break;
+    const text = signalText(item.title, item.tags, Math.min(105, remaining - separatorLength));
+    if (!text) continue;
+    signals.push(text);
+    remaining -= codePointLength(text) + separatorLength;
+  }
+
+  const prompt = [
+    opening,
+    `Theme: ${headline}.`,
+    `Context: ${intro}.`,
+    `Signals: ${signals.join("; ")}.`,
+    style,
+    layout,
+    restrictions,
   ].join(" ");
+  if (codePointLength(prompt) > COVER_PROMPT_TARGET_CHARS) throw new Error("COVER_PROMPT_BUDGET_EXCEEDED");
+  return prompt;
 }
 
 function trustedMediaUrl(value: unknown): URL {
@@ -120,6 +175,7 @@ async function pause(milliseconds: number): Promise<void> {
 }
 
 export async function generateCoverImage(apiKey: string, prompt: string, options: GenerateOptions = {}): Promise<GeneratedCoverImage> {
+  if (codePointLength(prompt) > COVER_PROMPT_MAX_CHARS) throw new Error("FAL_PROMPT_TOO_LONG");
   const fetcher = options.fetcher ?? fetch;
   let tracking = options.request ? {
     requestId: options.request.requestId,
