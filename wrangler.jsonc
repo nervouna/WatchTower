@@ -86,6 +86,7 @@
   "vars": {
     "BRIEF_AUDIO_ENABLED": "true",
     "BRIEF_COVER_ENABLED": "true",
+    "BRIEF_PUSH_ENABLED": "true",
     "AUTH0_ISSUER": "https://auth.watchtower.damao.io/",
     "AUTH0_TENANT_DOMAIN": "dev-to70scnda2czaona.us.auth0.com",
     "AUTH0_AUDIENCE": "https://watchtower.damao.io/api",
@@ -177,6 +178,7 @@
       "vars": {
         "BRIEF_AUDIO_ENABLED": "false",
         "BRIEF_COVER_ENABLED": "false",
+        "BRIEF_PUSH_ENABLED": "false",
         "ITEM_EXPLORATION_ENABLED": "false",
         "ITEM_EXPLORATION_CACHE_TTL_HOURS": "24",
         "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS": "120",

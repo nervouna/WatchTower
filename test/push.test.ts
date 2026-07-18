@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createApnsJwt, sendApnsNotification } from "../src/push/apns";
 import { decryptToken, encryptToken, hmacHex } from "../src/push/crypto";
@@ -31,6 +31,19 @@ async function privateKeyPem(): Promise<string> {
 }
 
 describe("mobile push", () => {
+  it("does not reserve a batch or send a queue message when brief push is disabled", async () => {
+    const now = new Date("2026-07-20T00:31:00.000Z");
+    await env.DB.prepare(
+      `INSERT INTO briefs (brief_date, status, publish_at, generated_at, headline, intro, missing_sources_json, model, prompt_version)
+       VALUES (?, 'partial', ?, ?, ?, 'intro', '["kickstarter"]', 'test', 'v1')`,
+    ).bind("2026-07-20", "2026-07-20T00:00:00.000Z", now.toISOString(), "静默恢复标题").run();
+    const send = vi.fn<Queue["send"]>();
+    expect(await enqueueBriefPush({ DB: env.DB, BRIEF_PUSH_QUEUE: queueWithSend(send), BRIEF_PUSH_ENABLED: "false" }, "2026-07-20", now)).toBe("disabled");
+    expect(send).not.toHaveBeenCalled();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM brief_push_batches WHERE brief_date = ?").bind("2026-07-20").first("count")).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM brief_push_deliveries WHERE brief_date = ?").bind("2026-07-20").first("count")).toBe(0);
+  });
+
   it("encrypts tokens and creates stable HMAC values", async () => {
     const encrypted = await encryptToken(encryptionKey, "a".repeat(64));
     expect(encrypted.ciphertext).not.toContain("a".repeat(16));
@@ -162,8 +175,8 @@ describe("mobile push", () => {
       body: JSON.stringify({ installationSecret: "B".repeat(43), deviceToken: "c".repeat(64), environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
     expect((await handleRequest(registration, env, now)).status).toBe(204);
-    expect(await enqueueBriefPush(env, "2026-07-17", now)).toBe("queued");
-    expect(await enqueueBriefPush(env, "2026-07-17", now)).toBe("already-queued");
+    expect(await enqueueBriefPush({ ...env, BRIEF_PUSH_ENABLED: "true" }, "2026-07-17", now)).toBe("queued");
+    expect(await enqueueBriefPush({ ...env, BRIEF_PUSH_ENABLED: "true" }, "2026-07-17", now)).toBe("already-queued");
 
     await processPushFanout(env, { kind: "brief-push-fanout", briefDate: "2026-07-17" }, now);
     const delivery = await env.DB.prepare("SELECT id, status FROM brief_push_deliveries").first<{ id: string; status: string }>();
