@@ -3,11 +3,15 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { setTimeout as delay } from "node:timers/promises";
 
 export const TARGETS = {
   dev: { domain: "dev.watchtower.damao.io", worker: "watchtower-daily-brief-dev", database: "watchtower-daily-brief-dev-db", wranglerEnv: "dev" },
   production: { domain: "watchtower.damao.io", worker: "watchtower-daily-brief", database: "watchtower-daily-brief-db", wranglerEnv: "" },
 };
+
+const METADATA_SMOKE_ATTEMPTS = 10;
+const METADATA_SMOKE_DELAY_MS = 3_000;
 
 export function run(command, args, options = {}) {
   const usesWrangler = args.some((value) => value === "wrangler");
@@ -80,11 +84,25 @@ async function assertAccessProtected(url, label) {
   if (!isAccessChallenge(response)) throw new Error(`DEV_ACCESS_SMOKE_FAILED:${label}`);
 }
 
+async function waitForMetadata(base, environment, sha) {
+  for (let attempt = 1; attempt <= METADATA_SMOKE_ATTEMPTS; attempt += 1) {
+    try {
+      const metadata = await fetchJson(`${base}/api/meta?sha=${sha}&attempt=${String(attempt)}`);
+      if (metadata.environment === environment && metadata.workerVersionTag === `git-${sha}`) return metadata;
+    } catch {
+      // A newly deployed custom domain can briefly continue serving the previous Worker version.
+    }
+    if (attempt < METADATA_SMOKE_ATTEMPTS) {
+      await delay(METADATA_SMOKE_DELAY_MS);
+    }
+  }
+  throw new Error("Deployment metadata smoke failed.");
+}
+
 export async function smoke(environment, sha) {
   const target = TARGETS[environment];
   const base = `https://${target.domain}`;
-  const meta = await fetchJson(`${base}/api/meta?sha=${sha}`);
-  if (meta.environment !== environment || meta.workerVersionTag !== `git-${sha}`) throw new Error("Deployment metadata smoke failed.");
+  const meta = await waitForMetadata(base, environment, sha);
   await Promise.all([
     fetchJson(`${base}/api/briefs/latest?sha=${sha}`),
     fetchJson(`${base}/api/briefs?limit=1&sha=${sha}`),

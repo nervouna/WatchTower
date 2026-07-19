@@ -25,4 +25,12 @@ describe("release preflight", () => {
     expect(library).toContain('environment === "dev"');
     expect(library).toContain("WWW-Authenticate");
   });
+
+  it("allows a bounded propagation window for deployment metadata", () => {
+    expect(library).toContain("METADATA_SMOKE_ATTEMPTS");
+    expect(library).toContain("METADATA_SMOKE_DELAY_MS");
+    expect(library).toContain('setTimeout as delay } from "node:timers/promises"');
+    expect(library).toContain("await delay(METADATA_SMOKE_DELAY_MS)");
+    expect(library).toContain("Deployment metadata smoke failed.");
+  });
 });
