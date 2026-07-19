@@ -7,7 +7,7 @@ interface MobilePushError {
 }
 
 type RateLimiter = { limit(input: { key: string }): Promise<{ success: boolean }> };
-type SubscriptionEnv = Pick<Env, "DB" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY"> & {
+type SubscriptionEnv = Pick<Env, "DB" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "DEPLOYMENT_ENV"> & {
   MOBILE_PUSH_RATE_LIMITER?: RateLimiter;
 };
 
@@ -92,6 +92,12 @@ export async function handlePushSubscriptionRequest(request: Request, env: Subsc
     !appEnvironmentIsValid(body.appId, body.environment)
   ) {
     return error("INVALID_PUSH_APP_ENVIRONMENT", "推送应用与 APNs 环境不匹配。", 400);
+  }
+  const expected = env.DEPLOYMENT_ENV === "dev"
+    ? { appId: PUSH_APP_IDS.development, environment: "sandbox" }
+    : { appId: PUSH_APP_IDS.production, environment: "production" };
+  if (body.appId !== expected.appId || body.environment !== expected.environment) {
+    return error("PUSH_ENVIRONMENT_MISMATCH", "推送订阅与当前服务环境不匹配。", 400);
   }
   const encrypted = await encryptToken(env.PUSH_TOKEN_ENCRYPTION_KEY, body.deviceToken);
   const tokenHmac = await hmacHex(env.PUSH_TOKEN_HMAC_KEY, body.deviceToken);

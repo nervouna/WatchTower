@@ -114,15 +114,22 @@ npm run dev
 | `npm run build` | 通过 Wrangler dry run 构建 Worker 和静态资源到 `dist/`。 |
 | `npm run cf-typegen` | 根据 Wrangler 配置重新生成 Worker 环境类型。 |
 | `npm run db:migrate:local` | 将 D1 migrations 应用到本地数据库。 |
-| `npm run db:migrate:remote` | 将 D1 migrations 应用到远程数据库。 |
+| `npm run verify` | 运行 Worker/Web 全门禁、类型一致性检查和 Dev/Production dry run。 |
+| `npm run verify:mobile` | 运行 Flutter analyze/test 与 Dev/Prod 无签名 iOS 构建。 |
 | `npm run allowlist -- list [--remote\|--dev]` | 列出本地、生产远程或隔离 Dev D1 白名单。 |
 | `npm run allowlist -- add <user-id> [--note <text>] [--remote\|--dev]` | 添加或更新白名单记录；默认仅操作本地 D1。 |
 | `npm run allowlist -- remove <user-id> [--remote\|--dev]` | 移除白名单权限；默认仅操作本地 D1。 |
 | `npm run cover:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排播客封面任务。 |
 | `npm run brief:regenerate -- YYYY-MM-DD [...]` | 使用临时 Auth0 access token，按参数顺序逐期提交并轮询历史重生成。 |
-| `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
-| `npm run deploy:dev` | 部署隔离的 `watchtower-daily-brief-dev` Worker 到 `dev.watchtower.damao.io`。 |
-| `npm run db:migrate:dev` | 显式应用 Dev D1 migrations；不会修改生产 D1。 |
+| `npm run release:dev` | 经干净工作区、CI、目标确认后 migrate、部署并 smoke Dev。 |
+| `npm run e2e:dev -- final YYYY-MM-DD` | 用临时 access token 触发并轮询 Dev 全流水线。 |
+| `npm run release:prod` | 从同步且 Dev 已验证的 main SHA migrate、部署并 smoke 生产。 |
+| `npm run rollback:prod -- <version-id>` | 经显式确认仅回滚生产 Worker deployment。 |
+| `npm run db:migrate:dev` / `npm run db:migrate:prod` | 经目标与确认关卡应用对应环境的 D1 migrations。 |
+| `npm run testflight:bump -- --build-number <N>` | 只提升 `mobile/pubspec.yaml` build number。 |
+| `npm run testflight:build` / `npm run testflight:inspect` | 从发布基线构建 prod IPA，并检查元数据、签名与 entitlements。 |
+
+旧的 `deploy`、`deploy:dev` 和 `db:migrate:remote` 已 fail closed，不再直接执行远程 mutation。所有环境发布都会输出域名、数据库、Worker、分支和完整 Git SHA；secrets 按 Wrangler 环境独立配置，不由发布脚本写入或打印。
 
 白名单命令使用 `--remote` 明确选择生产 D1，或使用 `--dev` 明确选择隔离的远程 Dev D1；两个参数不能同时使用。
 
@@ -148,19 +155,18 @@ flutter build ipa --flavor prod --release
 flutter build appbundle
 ```
 
-默认 API 地址是 `https://watchtower.damao.io`。本地联调时使用非秘密编译参数覆盖：
+`dev` flavor 固定连接 `https://dev.watchtower.damao.io`，`prod` 与当前无 flavor 的 Android 构建固定连接 `https://watchtower.damao.io`。未知 flavor 会直接启动失败。本地代理联调时可使用非秘密编译参数显式覆盖：
 
 ```sh
 flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
 ```
 
-使用真实 iPhone 验证隔离 Dev 环境时，必须显式指定 Dev API；仅选择 `dev` flavor 不会自动切换服务端：
+使用真实 iPhone 验证隔离 Dev 环境时只需选择 `dev` flavor：
 
 ```sh
 flutter run \
   --flavor dev \
-  -d <device-id> \
-  --dart-define=WATCHTOWER_API_BASE_URL=https://dev.watchtower.damao.io
+  -d <device-id>
 ```
 
 iOS 使用一个 `Runner` target 和两套 flavor：本地开发使用 `dev`（`io.damao.watchtower.dev`、sandbox APNs），TestFlight/App Store 使用 `prod`（`io.damao.watchtower`、production APNs）。Android applicationId 仍为 `io.damao.watchtower`。

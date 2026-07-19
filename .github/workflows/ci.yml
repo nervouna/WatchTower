@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  worker-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: npm ci
+      - run: node scripts/check-typegen.mjs
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm exec -- wrangler deploy --env= --dry-run --outdir dist/production
+      - run: npm exec -- wrangler deploy --env dev --dry-run --outdir dist/dev
+      - run: node scripts/secret-scan.mjs
+
+  flutter:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: stable
+          cache: true
+      - working-directory: mobile
+        run: flutter pub get
+      - working-directory: mobile
+        run: flutter analyze
+      - working-directory: mobile
+        run: flutter test
+      - working-directory: mobile
+        run: flutter build ios --flavor dev --debug --no-codesign
+      - working-directory: mobile
+        run: flutter build ios --flavor prod --release --no-codesign

@@ -59,8 +59,9 @@ describe("mobile push", () => {
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.1" },
       body: JSON.stringify({ installationSecret, deviceToken, environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
-    expect((await handleRequest(request("a".repeat(64)), env)).status).toBe(204);
-    expect((await handleRequest(request("b".repeat(64)), env)).status).toBe(204);
+    const devEnv = { ...env, DEPLOYMENT_ENV: "dev" } as Env;
+    expect((await handleRequest(request("a".repeat(64)), devEnv)).status).toBe(204);
+    expect((await handleRequest(request("b".repeat(64)), devEnv)).status).toBe(204);
 
     const rows = await env.DB.prepare(
       "SELECT installation_hmac, token_hmac, token_ciphertext, token_iv, environment, app_id, app_version, active FROM push_subscriptions",
@@ -109,6 +110,27 @@ describe("mobile push", () => {
       error: { code: "INVALID_PUSH_APP_ENVIRONMENT" },
     });
     expect((await handleRequest(request("io.example.watchtower", "sandbox"), env)).status).toBe(400);
+  });
+
+  it("accepts only the app and APNs pair assigned to the Worker environment", async () => {
+    await env.DB.exec("DELETE FROM push_subscriptions;");
+    const request = (appId: string, environment: string) => new Request("https://example.com/api/mobile/v1/push-subscriptions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.12" },
+      body: JSON.stringify({
+        installationSecret: "G".repeat(43), deviceToken: "2".repeat(64), appId, environment, appVersion: "1.0.0+8",
+      }),
+    });
+    const devEnv = { ...env, DEPLOYMENT_ENV: "dev" } as Env;
+    expect((await handleRequest(request(devAppId, "sandbox"), devEnv)).status).toBe(204);
+    const productionOnDev = await handleRequest(request(productionAppId, "production"), devEnv);
+    expect(productionOnDev.status).toBe(400);
+    expect(await productionOnDev.json()).toMatchObject({ error: { code: "PUSH_ENVIRONMENT_MISMATCH" } });
+
+    const prodEnv = { ...env, DEPLOYMENT_ENV: "production" } as Env;
+    expect((await handleRequest(request(productionAppId, "production"), prodEnv)).status).toBe(204);
+    expect((await handleRequest(request(devAppId, "sandbox"), prodEnv)).status).toBe(400);
+    await env.DB.exec("DELETE FROM push_subscriptions;");
   });
 
   it("requires an explicit appId for push subscriptions", async () => {
@@ -174,7 +196,7 @@ describe("mobile push", () => {
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.2" },
       body: JSON.stringify({ installationSecret: "B".repeat(43), deviceToken: "c".repeat(64), environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
-    expect((await handleRequest(registration, env, now)).status).toBe(204);
+    expect((await handleRequest(registration, { ...env, DEPLOYMENT_ENV: "dev" } as Env, now)).status).toBe(204);
     expect(await enqueueBriefPush({ ...env, BRIEF_PUSH_ENABLED: "true" }, "2026-07-17", now)).toBe("queued");
     expect(await enqueueBriefPush({ ...env, BRIEF_PUSH_ENABLED: "true" }, "2026-07-17", now)).toBe("already-queued");
 
@@ -279,7 +301,7 @@ describe("mobile push", () => {
       headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.3" },
       body: JSON.stringify({ installationSecret: "C".repeat(43), deviceToken: "d".repeat(64), environment: "sandbox", appId: devAppId, appVersion: "1.0.0+1" }),
     });
-    expect((await handleRequest(registration, env, now)).status).toBe(204);
+    expect((await handleRequest(registration, { ...env, DEPLOYMENT_ENV: "dev" } as Env, now)).status).toBe(204);
 
     await env.DB.prepare(
       "INSERT INTO brief_push_batches (brief_date, status, created_at, updated_at) VALUES (?, 'queued', ?, ?)",

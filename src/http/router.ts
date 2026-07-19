@@ -21,6 +21,7 @@ import { handlePushSubscriptionRequest } from "../push/subscriptions";
 import { authenticate, AuthError, type AuthUser } from "../auth/auth0";
 import { explorationEnabled, handleExplorationRequest } from "../exploration/http";
 import type { BriefRegenerationJob } from "../regeneration/jobs";
+import { handleDevPipelineRequest } from "../dev-pipeline/http";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -44,7 +45,8 @@ function protectedError(code: string, message: string, status: number, extraHead
   return protectedResponse({ error: { code, message } } satisfies ApiError, status, extraHeaders);
 }
 
-type AuthRuntimeEnv = Pick<Env, "DB" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">;
+type AuthRuntimeEnv = Pick<Env, "DB" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID"> &
+  Partial<Pick<Env, "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">>;
 
 async function requireUser(request: Request, env: AuthRuntimeEnv): Promise<AuthUser | Response> {
   try {
@@ -205,6 +207,7 @@ async function handleBriefRegenerationRequest(
 }
 
 async function deleteAuth0User(env: AuthRuntimeEnv, userId: string): Promise<"deleted" | "not-found" | "failed"> {
+  if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) return "failed";
   try {
     const tokenResponse = await fetch(`https://${env.AUTH0_TENANT_DOMAIN}/oauth/token`, {
       method: "POST",
@@ -230,7 +233,7 @@ async function deleteAuth0User(env: AuthRuntimeEnv, userId: string): Promise<"de
   }
 }
 
-async function handleAuthRequest(request: Request, env: AuthRuntimeEnv): Promise<Response> {
+async function handleAuthRequest(request: Request, env: AuthRuntimeEnv & Pick<Env, "ACCOUNT_DELETION_ENABLED">): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (path === "/api/auth/config") {
     if (request.method !== "GET" && request.method !== "HEAD") return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
@@ -250,6 +253,9 @@ async function handleAuthRequest(request: Request, env: AuthRuntimeEnv): Promise
   }
   if (path === "/api/auth/account") {
     if (request.method !== "DELETE") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 DELETE。", 405, { Allow: "DELETE" });
+    if (env.ACCOUNT_DELETION_ENABLED !== "true") {
+      return protectedError("ACCOUNT_DELETION_DISABLED", "Dev 环境不支持删除账号。", 403);
+    }
     await removeAccountData(env.DB, user.id);
     const result = await deleteAuth0User(env, user.id);
     return result === "failed"
@@ -305,11 +311,26 @@ export function isValidUtcDate(value: string): boolean {
 
 export async function handleRequest(
   request: Request,
-  env: Pick<Env, "DB" | "ASSETS" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "BRIEF_COVER_ENABLED" | "MIMO_API_KEY" | "FAL_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET" | "ITEM_EXPLORATION_QUEUE" | "EXPLORATION_RATE_LIMITER" | "ITEM_EXPLORATION_ENABLED" | "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS" | "ITEM_EXPLORATION_CREDIT_RESERVATION">,
+  env: Pick<Env, "DB" | "ASSETS" | "BRIEF_AUDIO" | "BRIEF_AUDIO_QUEUE" | "BRIEF_AUDIO_ENABLED" | "BRIEF_COVER_ENABLED" | "MIMO_API_KEY" | "FAL_API_KEY" | "PUSH_TOKEN_ENCRYPTION_KEY" | "PUSH_TOKEN_HMAC_KEY" | "MOBILE_PUSH_RATE_LIMITER" | "AUTH0_ISSUER" | "AUTH0_TENANT_DOMAIN" | "AUTH0_AUDIENCE" | "AUTH0_WEB_CLIENT_ID" | "AUTH0_MOBILE_DEV_CLIENT_ID" | "AUTH0_MOBILE_PROD_CLIENT_ID" | "ITEM_EXPLORATION_QUEUE" | "EXPLORATION_RATE_LIMITER" | "ITEM_EXPLORATION_ENABLED" | "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS" | "ITEM_EXPLORATION_CREDIT_RESERVATION" | "DEPLOYMENT_ENV" | "ACCOUNT_DELETION_ENABLED" | "VERSION_METADATA" | "DEV_PIPELINE_QUEUE" | "AUTH0_MANAGEMENT_CLIENT_ID" | "AUTH0_MANAGEMENT_CLIENT_SECRET">,
   now = new Date(),
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+  if (url.pathname === "/api/meta") {
+    if (request.method !== "GET" && request.method !== "HEAD") return apiError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 HEAD。", 405, { Allow: "GET, HEAD" });
+    return jsonResponse({
+      environment: env.DEPLOYMENT_ENV,
+      workerVersionId: env.VERSION_METADATA.id,
+      workerVersionTag: env.VERSION_METADATA.tag,
+      deployedAt: env.VERSION_METADATA.timestamp,
+    }, 200, undefined, null, false, request.method === "HEAD");
+  }
+  if (url.pathname === "/api/dev/pipeline-runs" || url.pathname.startsWith("/api/dev/pipeline-runs/")) {
+    if (env.DEPLOYMENT_ENV !== "dev") return apiError("API_NOT_FOUND", "未找到该 API。", 404);
+    const user = await requireAllowedUser(request, env);
+    if (user instanceof Response) return user;
+    return handleDevPipelineRequest(request, env, user.id, now);
+  }
   if (url.pathname === "/api/mobile/v1/push-subscriptions") {
     return handlePushSubscriptionRequest(request, env, now);
   }

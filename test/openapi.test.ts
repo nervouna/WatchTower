@@ -19,7 +19,7 @@ describe("checked-in OpenAPI contract", () => {
   });
 
   it("documents allowlisted evidence-only brief regeneration without publication push", () => {
-    expect(contract).toContain("version: 1.2.0");
+    expect(contract).toContain("version: 1.3.0");
     const path = between(contract, "  /api/briefs/{date}/regeneration:\n", "  /api/mobile/v1/push-subscriptions:\n");
     expect(path).toContain("operationId: getBriefRegeneration");
     expect(path).toContain("operationId: regenerateBrief");
@@ -42,8 +42,8 @@ describe("checked-in OpenAPI contract", () => {
     expect(between(contract, "    BriefAudio:\n", "    Brief:\n")).toContain("cover:");
   });
 
-  it("publishes the 1.1 exploration resource and optional brief feature switch", () => {
-    expect(contract).toContain("version: 1.2.0");
+  it("retains the exploration resource and optional brief feature switch", () => {
+    expect(contract).toContain("version: 1.3.0");
     expect(contract).toContain("/api/explorations/{briefDate}/{entityId}:");
     expect(contract).toContain("operationId: triggerItemExploration");
     expect(contract).toContain("ExplorationSections:");

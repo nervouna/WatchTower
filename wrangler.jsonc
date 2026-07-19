@@ -16,6 +16,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "version_metadata": { "binding": "VERSION_METADATA" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -84,6 +85,8 @@
     }
   ],
   "vars": {
+    "DEPLOYMENT_ENV": "production",
+    "ACCOUNT_DELETION_ENABLED": "true",
     "BRIEF_AUDIO_ENABLED": "true",
     "BRIEF_COVER_ENABLED": "true",
     "BRIEF_PUSH_ENABLED": "true",
@@ -107,8 +110,6 @@
       "MIMO_API_KEY",
       "FAL_API_KEY",
       "APNS_TEAM_ID",
-      "APNS_SANDBOX_KEY_ID",
-      "APNS_SANDBOX_PRIVATE_KEY",
       "APNS_PRODUCTION_KEY_ID",
       "APNS_PRODUCTION_PRIVATE_KEY",
       "PUSH_TOKEN_ENCRYPTION_KEY",
@@ -147,6 +148,7 @@
           "bucket_name": "watchtower-brief-audio-dev"
         }
       ],
+      "version_metadata": { "binding": "VERSION_METADATA" },
       "queues": {
         "producers": [
           {
@@ -160,6 +162,43 @@
           {
             "binding": "ITEM_EXPLORATION_QUEUE",
             "queue": "watchtower-item-exploration-jobs-dev"
+          },
+          {
+            "binding": "DEV_PIPELINE_QUEUE",
+            "queue": "watchtower-dev-pipeline-runs"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "watchtower-brief-audio-jobs-dev",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 2,
+            "max_concurrency": 1,
+            "retry_delay": 60
+          },
+          {
+            "queue": "watchtower-brief-push-jobs-dev",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "retry_delay": 60
+          },
+          {
+            "queue": "watchtower-item-exploration-jobs-dev",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "max_concurrency": 2,
+            "retry_delay": 60
+          },
+          {
+            "queue": "watchtower-dev-pipeline-runs",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "retry_delay": 60
           }
         ]
       },
@@ -176,10 +215,12 @@
         }
       ],
       "vars": {
-        "BRIEF_AUDIO_ENABLED": "false",
-        "BRIEF_COVER_ENABLED": "false",
-        "BRIEF_PUSH_ENABLED": "false",
-        "ITEM_EXPLORATION_ENABLED": "false",
+        "DEPLOYMENT_ENV": "dev",
+        "ACCOUNT_DELETION_ENABLED": "false",
+        "BRIEF_AUDIO_ENABLED": "true",
+        "BRIEF_COVER_ENABLED": "true",
+        "BRIEF_PUSH_ENABLED": "true",
+        "ITEM_EXPLORATION_ENABLED": "true",
         "ITEM_EXPLORATION_CACHE_TTL_HOURS": "24",
         "ITEM_EXPLORATION_DAILY_TAVILY_CREDITS": "120",
         "ITEM_EXPLORATION_CREDIT_RESERVATION": "12",
@@ -188,23 +229,20 @@
         "AUTH0_AUDIENCE": "https://watchtower.damao.io/api",
         "AUTH0_WEB_CLIENT_ID": "xk9v7BQhHNo4Us27srWAifkxIZTtHPhL",
         "AUTH0_MOBILE_DEV_CLIENT_ID": "xVjFpJiKSjIgwf6we3IJ2V4ciQUIRvAU",
-        "AUTH0_MOBILE_PROD_CLIENT_ID": "qdjaZq0j2lxZxcbSsPOqx8VKU6irFLKt",
-        "TAVILY_API_KEY": "",
-        "DEEPSEEK_API_KEY": "",
-        "AUTH0_MANAGEMENT_CLIENT_ID": "",
-        "AUTH0_MANAGEMENT_CLIENT_SECRET": "",
-        "MIMO_API_KEY": "",
-        "FAL_API_KEY": "",
-        "APNS_TEAM_ID": "",
-        "APNS_SANDBOX_KEY_ID": "",
-        "APNS_SANDBOX_PRIVATE_KEY": "",
-        "APNS_PRODUCTION_KEY_ID": "",
-        "APNS_PRODUCTION_PRIVATE_KEY": "",
-        "PUSH_TOKEN_ENCRYPTION_KEY": "",
-        "PUSH_TOKEN_HMAC_KEY": ""
+        "AUTH0_MOBILE_PROD_CLIENT_ID": "qdjaZq0j2lxZxcbSsPOqx8VKU6irFLKt"
       },
       "secrets": {
-        "required": []
+        "required": [
+          "TAVILY_API_KEY",
+          "DEEPSEEK_API_KEY",
+          "MIMO_API_KEY",
+          "FAL_API_KEY",
+          "APNS_TEAM_ID",
+          "APNS_SANDBOX_KEY_ID",
+          "APNS_SANDBOX_PRIVATE_KEY",
+          "PUSH_TOKEN_ENCRYPTION_KEY",
+          "PUSH_TOKEN_HMAC_KEY"
+        ]
       },
       "triggers": {
         "crons": []

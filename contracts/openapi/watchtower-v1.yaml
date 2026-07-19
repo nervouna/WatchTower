@@ -1,11 +1,50 @@
 openapi: 3.1.0
 info:
   title: WatchTower Public API
-  version: 1.2.0
+  version: 1.3.0
   description: Stable public, authenticated, brief regeneration, and item exploration contract consumed by the WatchTower web and mobile clients.
 servers:
   - url: https://watchtower.damao.io
 paths:
+  /api/meta:
+    get:
+      operationId: getDeploymentMetadata
+      responses:
+        '200':
+          description: Public deployment identity without account, resource, or secret metadata
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeploymentMetadata' } } }
+  /api/dev/pipeline-runs:
+    post:
+      operationId: createDevPipelineRun
+      description: Dev-only, authenticated, allowlisted asynchronous pipeline trigger. Production returns 404.
+      security: [{ auth0: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DevPipelineRunRequest' } } }
+      responses:
+        '202':
+          description: Dev pipeline run queued or existing idempotent run returned
+          content: { application/json: { schema: { $ref: '#/components/schemas/DevPipelineRun' } } }
+        '400': { $ref: '#/components/responses/ProtectedError' }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '404': { $ref: '#/components/responses/ApiError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+  /api/dev/pipeline-runs/{runId}:
+    parameters:
+      - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getDevPipelineRun
+      description: Dev-only authenticated status read. Production returns 404.
+      security: [{ auth0: [] }]
+      responses:
+        '200':
+          description: Current Dev pipeline run status
+          content: { application/json: { schema: { $ref: '#/components/schemas/DevPipelineRun' } } }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '404': { $ref: '#/components/responses/ApiError' }
   /api/auth/config:
     get:
       operationId: getAuthConfig
@@ -28,6 +67,7 @@ paths:
       security: [{ auth0: [] }]
       responses:
         '204': { description: Current Auth0 user and local identity data deleted }
+        '403': { description: Account deletion is intentionally disabled in Dev }
         '401': { $ref: '#/components/responses/ProtectedError' }
         '502': { $ref: '#/components/responses/ProtectedError' }
         '503': { $ref: '#/components/responses/ProtectedError' }
@@ -277,6 +317,39 @@ components:
       content:
         application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
   schemas:
+    DeploymentMetadata:
+      type: object
+      additionalProperties: false
+      required: [environment, workerVersionId, workerVersionTag, deployedAt]
+      properties:
+        environment: { type: string, enum: [dev, production] }
+        workerVersionId: { type: string }
+        workerVersionTag: { type: string }
+        deployedAt: { type: string, format: date-time }
+    DevPipelineRunRequest:
+      type: object
+      additionalProperties: false
+      required: [stage, targetDate]
+      properties:
+        stage: { type: string, enum: [collect, draft, final, recovery] }
+        targetDate: { type: string, format: date }
+    DevPipelineRun:
+      type: object
+      additionalProperties: false
+      required: [runId, stage, targetDate, status, outcome, errorCode, attemptCount, workerVersionTag, createdAt, startedAt, finishedAt]
+      properties:
+        runId: { type: string, format: uuid }
+        stage: { type: string, enum: [collect, draft, final, recovery] }
+        targetDate: { type: string, format: date }
+        status: { type: string, enum: [queued, processing, succeeded, failed] }
+        outcome: { anyOf: [{ type: string }, { type: 'null' }] }
+        errorCode: { anyOf: [{ type: string }, { type: 'null' }] }
+        attemptCount: { type: integer, minimum: 0 }
+        workerVersionTag: { type: string }
+        pollAfterSeconds: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        startedAt: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        finishedAt: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
     AuthMe:
       type: object
       required: [user, capabilities]

@@ -31,6 +31,7 @@ function apnsConfig(
   appId: PushAppId,
 ): ApnsConfig {
   if (environment === "sandbox") {
+    if (!env.APNS_SANDBOX_KEY_ID || !env.APNS_SANDBOX_PRIVATE_KEY) throw new Error("APNS_SANDBOX_NOT_CONFIGURED");
     return {
       teamId: env.APNS_TEAM_ID,
       keyId: env.APNS_SANDBOX_KEY_ID,
@@ -39,6 +40,7 @@ function apnsConfig(
     };
   }
   if (appId !== PUSH_APP_IDS.production) throw new Error("APNS_APP_ENVIRONMENT_INVALID");
+  if (!env.APNS_PRODUCTION_KEY_ID || !env.APNS_PRODUCTION_PRIVATE_KEY) throw new Error("APNS_PRODUCTION_NOT_CONFIGURED");
   return {
     teamId: env.APNS_TEAM_ID,
     keyId: env.APNS_PRODUCTION_KEY_ID,
@@ -52,7 +54,7 @@ function stableError(error: unknown): string {
   return value && /^[A-Z][A-Z0-9_]+$/u.test(value) ? value : "PUSH_UNKNOWN_ERROR";
 }
 
-export async function enqueueBriefPush(env: Pick<Env, "DB" | "BRIEF_PUSH_QUEUE" | "BRIEF_PUSH_ENABLED">, briefDate: string, now = new Date()): Promise<"queued" | "already-queued" | "disabled" | "not-found"> {
+export async function enqueueBriefPush(env: Pick<Env, "DB" | "BRIEF_PUSH_QUEUE"> & { BRIEF_PUSH_ENABLED: string }, briefDate: string, now = new Date()): Promise<"queued" | "already-queued" | "disabled" | "not-found"> {
   if (env.BRIEF_PUSH_ENABLED !== "true") return "disabled";
   const brief = await getPushBrief(env.DB, briefDate);
   if (!brief) return "not-found";

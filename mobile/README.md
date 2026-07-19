@@ -13,7 +13,7 @@ flutter test
 flutter run --flavor dev
 ```
 
-Override the production API only for local development:
+The `dev` flavor is fixed to `https://dev.watchtower.damao.io`; `prod` and the flavorless Android build are fixed to `https://watchtower.damao.io`. Unknown flavors fail at startup. Use an explicit override only for local proxy or focused debugging:
 
 ```sh
 flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787

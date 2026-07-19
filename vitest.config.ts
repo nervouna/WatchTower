@@ -19,6 +19,9 @@ export default defineConfig({
           AUTH0_MOBILE_PROD_CLIENT_ID: "test-mobile-prod-client",
           AUTH0_MANAGEMENT_CLIENT_ID: "test-management-client",
           AUTH0_MANAGEMENT_CLIENT_SECRET: "test-management-secret",
+          DEPLOYMENT_ENV: "production",
+          ACCOUNT_DELETION_ENABLED: "true",
+          VERSION_METADATA: { id: "test-version", tag: "git-test", timestamp: "2026-07-19T00:00:00.000Z" },
           MIMO_API_KEY: process.env.MIMO_API_KEY ?? "test-mimo-key",
           FAL_API_KEY: process.env.FAL_API_KEY ?? "test-fal-key",
           RUN_AUDIO_E2E: process.env.RUN_AUDIO_E2E ?? "false",
@@ -29,6 +32,7 @@ export default defineConfig({
           PUSH_TOKEN_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           PUSH_TOKEN_HMAC_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
         },
+        queueProducers: { DEV_PIPELINE_QUEUE: { queueName: "watchtower-dev-pipeline-runs" } },
         serviceBindings: {
           ASSETS: () => new Response("asset"),
         },
