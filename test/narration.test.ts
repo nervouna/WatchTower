@@ -70,6 +70,15 @@ describe("narration validation", () => {
     if (!result.ok) expect(result.errors).toEqual(expect.arrayContaining(["ITEM_LENGTH", "TOTAL_LENGTH"]));
   });
 
+  it("accepts a five-item script with valid total length and measured provider variance", () => {
+    const script = validScript(5);
+    const measuredLengths = [111, 133, 137, 132, 129];
+    script.items.forEach((item, index) => {
+      item.text_zh = "变化".repeat(70).slice(0, measuredLengths[index]);
+    });
+    expect(validateNarration(script, brief(5)).ok).toBe(true);
+  });
+
   it.each([
     ["unknown", (script: NarrationScript) => { script.items[0]!.entity_id = "entity_99999999999999999999999999999999"; }, "UNKNOWN_ENTITY"],
     ["duplicate", (script: NarrationScript) => { script.items[1]!.entity_id = script.items[0]!.entity_id; }, "DUPLICATE_ENTITY"],
@@ -92,10 +101,10 @@ describe("narration validation", () => {
   });
 
   it.each([
-    [5, "116-120"],
-    [6, "98-110"],
-    [7, "85-100"],
-  ])("uses a feasible per-item length target for a %i-item narration", async (itemCount, expectedRange) => {
+    [5, "116-120", "75-140"],
+    [6, "98-110", "75-130"],
+    [7, "85-100", "75-130"],
+  ])("uses a feasible per-item length target for a %i-item narration", async (itemCount, expectedRange, hardLimit) => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ choices: [{ message: { content: "{}" } }] }));
     await expect(generateNarration("secret", brief(itemCount), { fetcher })).rejects.toThrow("NARRATION_VALIDATION_FAILED");
 
@@ -103,6 +112,6 @@ describe("narration validation", () => {
     const repairBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)) as { messages: Array<{ content: string }> };
     expect(initialBody.messages[0]?.content).toContain(`four complete sentences totaling ${expectedRange} code points for every item`);
     expect(repairBody.messages[3]?.content).toContain(`four complete sentences totaling ${expectedRange} code points`);
-    expect(repairBody.messages[3]?.content).toContain("validator hard limit of 75-130 code points");
+    expect(repairBody.messages[3]?.content).toContain(`validator hard limit of ${hardLimit} code points`);
   });
 });

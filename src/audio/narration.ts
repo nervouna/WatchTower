@@ -62,7 +62,9 @@ export function validateNarration(value: unknown, brief: BriefPayload): Validati
     if (seen.has(item.entityId)) errors.add("DUPLICATE_ENTITY");
     seen.add(item.entityId);
     ranks.push(item.rank);
-    if (codePoints(narrationItem.text_zh) < (short ? 115 : 75) || codePoints(narrationItem.text_zh) > (short ? 125 : 130)) errors.add("ITEM_LENGTH");
+    const itemLength = codePoints(narrationItem.text_zh);
+    const itemMaximum = planned.length === 5 ? 140 : short ? 125 : 130;
+    if (itemLength < (short ? 115 : 75) || itemLength > itemMaximum) errors.add("ITEM_LENGTH");
     if (URL_PATTERN.test(narrationItem.text_zh)) errors.add("URL_PRESENT");
     const evidence = `${item.title}\n${item.summary}\n${item.whyItMatters}`;
     if (newTokens(narrationItem.text_zh, evidence, NUMBER_PATTERN)) errors.add("NEW_NUMBER");
@@ -83,7 +85,7 @@ function systemPrompt(itemCount: number): string {
     : "Total Unicode code points: 650-900.";
   return `You write a factual Chinese spoken script for a daily technology brief. Return JSON only:
 {"opening_zh":"string","items":[{"entity_id":"string","text_zh":"string"}],"closing_zh":"string"}
-Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling ${itemLengthTarget} code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5-7 items the validator retains total 650-900 and hard limits opening 40-100, each item 75-130, closing 20-60.
+Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling ${itemLengthTarget} code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5 items the validator retains total 650-900 and hard limits opening 40-100, each item 75-140, closing 20-60; for 6-7 items the same total applies with each item limited to 75-130.
 Do not read tags, URLs, source lists, or feedback. Do not add facts, advice, predictions, evaluations, numbers, versions, percentages, or Latin technical names absent from the corresponding item evidence.`;
 }
 
@@ -169,7 +171,7 @@ function parseJson(content: string): unknown {
 export async function generateNarration(apiKey: string, brief: BriefPayload, options: RetryOptions = {}): Promise<NarrationScript> {
   const itemCount = plannedItems(brief).length;
   const itemLengthTarget = narrationItemLengthTarget(itemCount);
-  const itemHardLimit = itemCount <= 4 ? "115-125" : "75-130";
+  const itemHardLimit = itemCount <= 4 ? "115-125" : itemCount === 5 ? "75-140" : "75-130";
   const system = systemPrompt(itemCount);
   const user = briefInput(brief);
   const first = await complete(apiKey, [{ role: "system", content: system }, { role: "user", content: user }], options);
