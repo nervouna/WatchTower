@@ -43,7 +43,7 @@ describe("MiMo speech synthesis", () => {
     [2, 40, 105],
     [3, 60, 135],
     [4, 80, 165],
-    [5, 135, 225],
+    [5, 120, 225],
     [7, 135, 225],
   ])("uses the %i-item duration profile", (itemCount, minimum, maximum) => {
     expect(audioDurationRange(itemCount)).toEqual({ minimum, maximum });

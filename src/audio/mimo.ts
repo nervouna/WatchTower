@@ -27,6 +27,7 @@ export function audioDurationRange(itemCount: number): { minimum: number; maximu
     case 2: return { minimum: 40, maximum: 105 };
     case 3: return { minimum: 60, maximum: 135 };
     case 4: return { minimum: 80, maximum: 165 };
+    case 5: return { minimum: 120, maximum: 225 };
     default: return { minimum: 135, maximum: 225 };
   }
 }
