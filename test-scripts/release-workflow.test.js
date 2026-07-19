@@ -199,6 +199,10 @@ describe("release candidate gates", () => {
       },
     });
     expect(assertDevValidationReceipt(waived, TEST_SHA, devMetadata(), TEST_NOW)).toBe(waived);
+    const readyWaived = validDevReceipt({
+      waivers: [{ component: "audio", reason: "manual audio check deferred", status: "ready", errorCode: null }],
+    });
+    expect(assertDevValidationReceipt(readyWaived, TEST_SHA, devMetadata(), TEST_NOW)).toBe(readyWaived);
     for (const downstream of [
       { audioStatus: "pending", audioErrorCode: null },
       { audioStatus: "failed", audioErrorCode: null },
@@ -242,6 +246,11 @@ describe("release candidate gates", () => {
       false,
       "2026-07-20T00:00:00.000Z",
     )).toBe(false);
+    expect(devE2e.downstreamReady(
+      validDevReceipt().downstream,
+      true,
+      "2026-07-20T00:00:00.000Z",
+    )).toBe(true);
   });
 
   it("uses the single Worker version receiving all production traffic", () => {

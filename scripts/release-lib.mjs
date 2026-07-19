@@ -210,10 +210,13 @@ function assertDevValidationReceiptEvidence(receipt, sha, metadata, status, now 
     validIsoTimestamp(receipt?.runStartedAt) && validIsoTimestamp(receipt?.runFinishedAt) && runFinishedAt >= runStartedAt &&
     validIsoTimestamp(receipt?.automatedAt) && automatedAt >= runFinishedAt &&
     (audioWaiver
-      ? downstream?.audioStatus === "failed" && typeof downstream?.audioErrorCode === "string" &&
-        /^[A-Z][A-Z0-9_]*$/u.test(downstream.audioErrorCode) && downstream.audioErrorCode !== "UNKNOWN_ERROR_CODE" &&
-        audioWaiver.status === downstream.audioStatus && audioWaiver.errorCode === downstream.audioErrorCode &&
-        validIsoTimestamp(downstream?.audioUpdatedAt) && audioUpdatedAt >= runStartedAt
+      ? (downstream?.audioStatus === "ready" && downstream?.audioErrorCode === null &&
+          audioWaiver.status === "ready" && audioWaiver.errorCode === null &&
+          validIsoTimestamp(downstream?.audioGeneratedAt) && audioGeneratedAt >= runStartedAt) ||
+        (downstream?.audioStatus === "failed" && typeof downstream?.audioErrorCode === "string" &&
+          /^[A-Z][A-Z0-9_]*$/u.test(downstream.audioErrorCode) && downstream.audioErrorCode !== "UNKNOWN_ERROR_CODE" &&
+          audioWaiver.status === downstream.audioStatus && audioWaiver.errorCode === downstream.audioErrorCode &&
+          validIsoTimestamp(downstream?.audioUpdatedAt) && audioUpdatedAt >= runStartedAt)
       : validIsoTimestamp(downstream?.audioGeneratedAt) && audioGeneratedAt >= runStartedAt) &&
     validIsoTimestamp(downstream?.coverGeneratedAt) && coverGeneratedAt >= runStartedAt &&
     validIsoTimestamp(downstream?.pushBatchCreatedAt) && validIsoTimestamp(downstream?.latestDeliveredAt) &&
@@ -228,7 +231,7 @@ function assertDevValidationReceiptEvidence(receipt, sha, metadata, status, now 
   const latestEvidenceAt = status === "pending-manual" ? automatedAt : manualAcceptanceAt;
   const deployedAt = Date.parse(metadata?.deployedAt ?? "");
   const audioEvidenceNotFuture = audioWaiver
-    ? audioUpdatedAt <= automatedAt
+    ? (downstream?.audioStatus === "ready" ? audioGeneratedAt <= automatedAt : audioUpdatedAt <= automatedAt)
     : audioGeneratedAt <= automatedAt;
   const currentTimePassed = Number.isFinite(latestEvidenceAt) && latestEvidenceAt <= now + 5 * 60 * 1000 &&
     audioEvidenceNotFuture && coverGeneratedAt <= automatedAt &&

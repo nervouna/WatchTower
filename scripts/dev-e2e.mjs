@@ -123,8 +123,9 @@ export function downstreamReady(audit, audioWaived, runStartedAt) {
   const latestDelivered = Date.parse(audit.latestDeliveredAt ?? "");
   return audit.subscriptionCount > 0 &&
     (audioWaived
-      ? audit.audioStatus === "failed" && audit.audioErrorCode && audit.audioErrorCode !== "UNKNOWN_ERROR_CODE" &&
-        Number.isFinite(audioUpdated) && audioUpdated >= started
+      ? (audit.audioStatus === "ready" && Number.isFinite(audioGenerated) && audioGenerated >= started) ||
+        (audit.audioStatus === "failed" && audit.audioErrorCode && audit.audioErrorCode !== "UNKNOWN_ERROR_CODE" &&
+          Number.isFinite(audioUpdated) && audioUpdated >= started)
       : audit.audioStatus === "ready" && Number.isFinite(audioGenerated) && audioGenerated >= started) &&
     audit.coverStatus === "ready" && Number.isFinite(coverGenerated) && coverGenerated >= started &&
     audit.pushStatus === "sent" && audit.deliveredCount > 0 && Number.isFinite(started) &&
