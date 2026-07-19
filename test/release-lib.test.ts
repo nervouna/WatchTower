@@ -18,4 +18,11 @@ describe("release preflight", () => {
     expect(library).toContain("Build number must be greater");
     expect(release).toContain('case "testflight:bump"');
   });
+
+  it("treats Dev web surfaces as Cloudflare Access protected", () => {
+    expect(library).toContain('redirect: "manual"');
+    expect(library).toContain("isAccessChallenge");
+    expect(library).toContain('environment === "dev"');
+    expect(library).toContain("WWW-Authenticate");
+  });
 });

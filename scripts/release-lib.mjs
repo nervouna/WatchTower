@@ -66,6 +66,20 @@ export function assertCiPassed(sha) {
   if (!ci || ci.conclusion !== "success") throw new Error(`CI has not passed for ${sha}.`);
 }
 
+export function isAccessChallenge(response) {
+  const authentication = response.headers.get("WWW-Authenticate") ?? "";
+  const location = response.headers.get("Location") ?? "";
+  return response.status === 302 && (
+    authentication.includes("Cloudflare-Access") ||
+    location.includes(".cloudflareaccess.com/cdn-cgi/access/login/")
+  );
+}
+
+async function assertAccessProtected(url, label) {
+  const response = await fetch(url, { cache: "no-store", redirect: "manual" });
+  if (!isAccessChallenge(response)) throw new Error(`DEV_ACCESS_SMOKE_FAILED:${label}`);
+}
+
 export async function smoke(environment, sha) {
   const target = TARGETS[environment];
   const base = `https://${target.domain}`;
@@ -75,6 +89,17 @@ export async function smoke(environment, sha) {
     fetchJson(`${base}/api/briefs/latest?sha=${sha}`),
     fetchJson(`${base}/api/briefs?limit=1&sha=${sha}`),
     fetchJson(`${base}/api/auth/config?sha=${sha}`),
+  ]);
+  if (environment === "dev") {
+    await Promise.all([
+      assertAccessProtected(`${base}/?sha=${sha}`, "home"),
+      assertAccessProtected(`${base}/archive?sha=${sha}`, "archive"),
+      assertAccessProtected(`${base}/app.js?sha=${sha}`, "app.js"),
+      assertAccessProtected(`${base}/styles.css?sha=${sha}`, "styles.css"),
+    ]);
+    return meta;
+  }
+  await Promise.all([
     fetch(`${base}/?sha=${sha}`, { cache: "no-store" }).then((response) => { if (!response.ok) throw new Error("HOME_SMOKE_FAILED"); }),
     fetch(`${base}/archive?sha=${sha}`, { cache: "no-store" }).then((response) => { if (!response.ok) throw new Error("ARCHIVE_SMOKE_FAILED"); }),
   ]);
