@@ -15,6 +15,7 @@ WatchTower is a Chinese daily technology/product intelligence brief with a stric
 - Use project-local Wrangler scripts. Verify changing Cloudflare APIs or configuration against current official documentation and the local schema.
 - Never print, log, hardcode, or commit secrets. Keep `.env.example` value-free and use environment variables or Wrangler secrets.
 - Use `$maintain-watchtower-worker` for Worker runtime, ingestion, schedule, API/data, D1, migration, audio, push, or Wrangler changes.
+- Use `$ship-watchtower` for feature worktrees, candidate verification, shared Dev deployment and E2E, production release or rollback, and TestFlight delivery.
 - Follow `public/AGENTS.md` for web UI work and `mobile/AGENTS.md` for Flutter work.
 
 ## Safety and workflow

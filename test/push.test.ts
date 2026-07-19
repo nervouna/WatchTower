@@ -207,9 +207,9 @@ describe("mobile push", () => {
     const pushEnv = {
       ...env,
       APNS_SANDBOX_KEY_ID: "SANDBOX123",
-      APNS_SANDBOX_PRIVATE_KEY: "sandbox-private-key",
+      APNS_SANDBOX_PRIVATE_KEY: "test-sandbox-private-key",
       APNS_PRODUCTION_KEY_ID: "PRODUCTION",
-      APNS_PRODUCTION_PRIVATE_KEY: "production-private-key",
+      APNS_PRODUCTION_PRIVATE_KEY: "test-production-private-key",
     };
     const result = await processPushDelivery(
       pushEnv,
@@ -268,9 +268,9 @@ describe("mobile push", () => {
       {
         ...env,
         APNS_SANDBOX_KEY_ID: "SANDBOX123",
-        APNS_SANDBOX_PRIVATE_KEY: "sandbox-private-key",
+        APNS_SANDBOX_PRIVATE_KEY: "test-sandbox-private-key",
         APNS_PRODUCTION_KEY_ID: "PRODUCTION",
-        APNS_PRODUCTION_PRIVATE_KEY: "production-private-key",
+        APNS_PRODUCTION_PRIVATE_KEY: "test-production-private-key",
       },
       { kind: "brief-push-delivery", deliveryId: "production-delivery", briefDate: "2026-07-19", headline: "生产标题" },
       now,

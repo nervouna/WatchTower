@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ship WatchTower"
+  short_description: "Run WatchTower Dev E2E, releases, and TestFlight safely"
+  default_prompt: "Use $ship-watchtower to carry this WatchTower change through the appropriate development, Dev validation, production, and TestFlight checkpoints."

@@ -1,7 +1,7 @@
 import { resolveScheduledRun } from "./domain/schedule";
 import { handleRequest } from "./http/router";
 import { processBriefAudioJob, type BriefAudioJob } from "./audio/jobs";
-import { CoverProcessingError, processBriefCoverJob, type BriefCoverJob } from "./cover/jobs";
+import { processBriefCoverJob, type BriefCoverJob } from "./cover/jobs";
 import {
   abandonBriefPushJob,
   processPushDelivery,
@@ -10,7 +10,6 @@ import {
 } from "./push/jobs";
 import {
   abandonExplorationJob,
-  ExplorationProcessingError,
   processExplorationJob,
   retryExplorationJob,
   type ExplorationJob,
@@ -18,12 +17,9 @@ import {
 import { processBriefRegenerationJob, type BriefRegenerationJob } from "./regeneration/jobs";
 import { executePipelineStage } from "./pipeline/execution";
 import { processDevPipelineJob, type DevPipelineJob } from "./dev-pipeline/jobs";
+import { isTerminalQueueFailure } from "./queue/failures";
 
-export function isTerminalQueueFailure(error: unknown, attempts: number): boolean {
-  return attempts >= 3 ||
-    (error instanceof ExplorationProcessingError && !error.retryable) ||
-    (error instanceof CoverProcessingError && !error.retryable);
-}
+export { isTerminalQueueFailure } from "./queue/failures";
 
 export default {
   fetch(request, env): Promise<Response> {
@@ -68,7 +64,7 @@ export default {
       const job = message.body;
       try {
         if (job.kind === "dev-pipeline-run") {
-          await processDevPipelineJob(env, job, new Date(), message.attempts > 1);
+          await processDevPipelineJob(env, job, new Date(), message.attempts);
         } else if (job.kind === "item-exploration") {
           await processExplorationJob(env, job, new Date());
         } else if (job.kind === "brief-push-fanout" || job.kind === "brief-push-delivery") {

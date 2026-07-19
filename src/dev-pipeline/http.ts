@@ -69,5 +69,5 @@ export async function handleDevPipelineRequest(
       return error("DEV_PIPELINE_QUEUE_FAILED", "Dev 流水线任务暂时无法排队。", 503);
     }
   }
-  return response(payload(queued.row), 202);
+  return response({ ...payload(queued.row), acceptedNewAttempt: queued.created }, 202);
 }

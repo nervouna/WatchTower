@@ -27,6 +27,8 @@ class ApiClient {
   final http.Client _client;
   final Uri _baseUri;
 
+  String get baseUrl => _baseUri.toString().replaceFirst(RegExp(r'/$'), '');
+
   Uri resolve(String path) => _baseUri.resolve(path);
 
   Future<Map<String, dynamic>> getJson(

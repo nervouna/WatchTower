@@ -10,6 +10,7 @@ import 'audio/audio_controller.dart';
 import 'data/api_client.dart';
 import 'data/brief_repository.dart';
 import 'data/local_database.dart';
+import 'deployment/deployment_controller.dart';
 import 'push/push_controller.dart';
 import 'theme.dart';
 import 'ui/app_shell.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
   final audio = AudioController(repository);
   final push = PushController(api: api);
   final auth = AuthController(api: api);
+  final deployment = DeploymentController(api);
   final router = _router();
   push.onNotificationOpened = (date) => router.go('/briefs/$date');
   runApp(
@@ -32,6 +34,7 @@ Future<void> main() async {
       audio: audio,
       push: push,
       auth: auth,
+      deployment: deployment,
       router: router,
     ),
   );
@@ -39,6 +42,7 @@ Future<void> main() async {
   unawaited(audio.initialize());
   unawaited(push.initialize());
   unawaited(auth.initialize());
+  unawaited(deployment.initialize());
 }
 
 GoRouter _router() => GoRouter(
@@ -113,6 +117,7 @@ class WatchTowerApp extends StatelessWidget {
     required this.audio,
     required this.push,
     required this.auth,
+    required this.deployment,
     required this.router,
     super.key,
   });
@@ -121,6 +126,7 @@ class WatchTowerApp extends StatelessWidget {
   final AudioController audio;
   final PushController push;
   final AuthController auth;
+  final DeploymentController deployment;
   final GoRouter router;
 
   @override
@@ -131,6 +137,7 @@ class WatchTowerApp extends StatelessWidget {
       ChangeNotifierProvider.value(value: audio),
       ChangeNotifierProvider.value(value: push),
       ChangeNotifierProvider.value(value: auth),
+      ChangeNotifierProvider.value(value: deployment),
     ],
     child: MaterialApp.router(
       title: 'WatchTower',

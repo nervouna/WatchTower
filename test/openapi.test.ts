@@ -62,6 +62,11 @@ describe("checked-in OpenAPI contract", () => {
     expect(schema).toContain("production");
   });
 
+  it("distinguishes a newly accepted Dev pipeline attempt from an idempotent response", () => {
+    expect(contract).toContain("acceptedNewAttempt:");
+    expect(contract).toContain("true only when this request created or re-queued an attempt");
+  });
+
   it.each(["put", "delete"])("documents %s push errors and no-store responses", (method) => {
     const path = between(contract, "  /api/mobile/v1/push-subscriptions:\n", "components:\n");
     const end = method === "put" ? "    delete:\n" : "components:\n";

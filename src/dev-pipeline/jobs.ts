@@ -1,5 +1,6 @@
 import { executePipelineStage } from "../pipeline/execution";
-import { claimDevPipelineRun, finishDevPipelineRun } from "./repository";
+import { isTerminalQueueFailure } from "../queue/failures";
+import { claimDevPipelineRun, finishDevPipelineRun, retryDevPipelineRun } from "./repository";
 
 export const DEV_PIPELINE_QUEUE_NAME = "watchtower-dev-pipeline-runs";
 
@@ -17,10 +18,10 @@ export async function processDevPipelineJob(
   env: Env,
   job: DevPipelineJob,
   now = new Date(),
-  recover = false,
+  queueDeliveryAttempt = 1,
   execute = executePipelineStage,
 ): Promise<"processed" | "already-processed"> {
-  const run = await claimDevPipelineRun(env.DB, job.runId, now.toISOString(), recover);
+  const run = await claimDevPipelineRun(env.DB, job.runId, now.toISOString(), queueDeliveryAttempt > 1);
   if (!run) return "already-processed";
   try {
     const result = await execute(env, {
@@ -39,9 +40,14 @@ export async function processDevPipelineJob(
     });
     return "processed";
   } catch (error) {
-    await finishDevPipelineRun(env.DB, job.runId, {
-      status: "failed", outcome: null, errorCode: stableErrorCode(error), now: new Date().toISOString(),
-    });
+    const errorCode = stableErrorCode(error);
+    if (isTerminalQueueFailure(error, queueDeliveryAttempt)) {
+      await finishDevPipelineRun(env.DB, job.runId, {
+        status: "failed", outcome: null, errorCode, now: new Date().toISOString(),
+      });
+    } else {
+      await retryDevPipelineRun(env.DB, job.runId, errorCode);
+    }
     throw error;
   }
 }

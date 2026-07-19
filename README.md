@@ -84,7 +84,7 @@ cp .env.example .env
 
 Auth0 issuer、audience、tenant domain 和三个公开 client ID 配置在 `wrangler.jsonc`。这些值不是秘密；Apple private key 只保存在 Apple/Auth0 配置中，不进入仓库或 Worker。
 
-探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产环境已启用探索入口，`env.dev` 仍保持 `ITEM_EXPLORATION_ENABLED=false`。当前查询与 prompt 合约版本分别为 `exploration-v2-bounded` 和 `exploration-v3-chinese`。
+探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产与隔离 Dev 均启用探索入口；Dev 没有 cron，只能通过受保护的手动流水线或真实客户端触发。当前查询与 prompt 合约版本分别为 `exploration-v2-bounded` 和 `exploration-v3-chinese`。
 
 ### 3. 初始化本地数据库
 
@@ -104,30 +104,35 @@ npm run dev
 
 ## 常用命令
 
+仓库级 `$ship-watchtower` skill 固化了从功能 worktree、本地门禁、共享 Dev E2E、生产发布到按需 TestFlight 的完整操作状态机；确定性动作统一调用下列 npm 脚本，不维护第二套临时发布命令。
+
 | 命令 | 说明 |
 | --- | --- |
 | `npm run dev` | 启动本地 Worker，并启用计划任务测试支持。 |
 | `npm run lint` | 运行 ESLint。 |
 | `npm run typecheck` | 运行 TypeScript 类型检查，不生成文件。 |
-| `npm test` | 在 Cloudflare Workers 测试环境中运行全部测试。 |
+| `npm test` | 运行 Worker、Web 与 Node 发布脚本行为测试。 |
 | `npm run test:watch` | 以 watch 模式运行测试。 |
 | `npm run build` | 通过 Wrangler dry run 构建 Worker 和静态资源到 `dist/`。 |
 | `npm run cf-typegen` | 根据 Wrangler 配置重新生成 Worker 环境类型。 |
 | `npm run db:migrate:local` | 将 D1 migrations 应用到本地数据库。 |
-| `npm run verify` | 运行 Worker/Web 全门禁、类型一致性检查和 Dev/Production dry run。 |
-| `npm run verify:mobile` | 运行 Flutter analyze/test 与 Dev/Prod 无签名 iOS 构建。 |
+| `npm run verify` | 运行 Worker/Web/发布脚本全门禁、类型一致性检查、两环境 dry run 与 secret scan。 |
+| `npm run verify:mobile` | 运行 Flutter analyze/test、Dev/Prod 无签名 iOS 构建，并核对 flavor 的 bundle/APNs/本地网络契约。 |
 | `npm run allowlist -- list [--remote\|--dev]` | 列出本地、生产远程或隔离 Dev D1 白名单。 |
 | `npm run allowlist -- add <user-id> [--note <text>] [--remote\|--dev]` | 添加或更新白名单记录；默认仅操作本地 D1。 |
 | `npm run allowlist -- remove <user-id> [--remote\|--dev]` | 移除白名单权限；默认仅操作本地 D1。 |
 | `npm run cover:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排播客封面任务。 |
 | `npm run brief:regenerate -- YYYY-MM-DD [...]` | 使用临时 Auth0 access token，按参数顺序逐期提交并轮询历史重生成。 |
 | `npm run release:dev` | 经干净工作区、CI、目标确认后 migrate、部署并 smoke Dev。 |
-| `npm run e2e:dev -- final YYYY-MM-DD` | 用临时 access token 触发并轮询 Dev 全流水线。 |
-| `npm run release:prod` | 从同步且 Dev 已验证的 main SHA migrate、部署并 smoke 生产。 |
+| `npm run dev:auth-proxy -- [--host <private-ip> --allow-insecure-lan]` | 只向 Dev 转发真实设备请求；私网明文诊断需额外确认，将 `/api/auth/me` 的临时 bearer token 写入私有 gitignored 文件并在退出时删除。 |
+| `npm run e2e:dev -- final YYYY-MM-DD` | 从私有 token 文件触发 Dev 流水线，校验 Worker SHA、sandbox 订阅、媒体、push 和 APNs 接受状态，并生成待人工确认 receipt。 |
+| `npm run e2e:dev:accept -- <run-id>` | 真机收到 sandbox 推送且受保护功能人工验收后，将 receipt 标记为通过。 |
+| `npm run release:prod` | 从同步且持有同 SHA 已通过 Dev E2E receipt 的 main migrate、部署并 smoke 生产。 |
+| `npm run rollback:dev -- <version-id>` | 经显式确认仅回滚共享 Dev Worker deployment，并复核公开版本与基础 smoke。 |
 | `npm run rollback:prod -- <version-id>` | 经显式确认仅回滚生产 Worker deployment。 |
 | `npm run db:migrate:dev` / `npm run db:migrate:prod` | 经目标与确认关卡应用对应环境的 D1 migrations。 |
 | `npm run testflight:bump -- --build-number <N>` | 只提升 `mobile/pubspec.yaml` build number。 |
-| `npm run testflight:build` / `npm run testflight:inspect` | 从发布基线构建 prod IPA，并检查元数据、签名与 entitlements。 |
+| `npm run testflight:build` / `npm run testflight:inspect` | 从发布基线生成并绑定同一次 prod IPA/xcarchive，检查版本、Mach-O UUID、签名、profile 与 entitlements。 |
 
 旧的 `deploy`、`deploy:dev` 和 `db:migrate:remote` 已 fail closed，不再直接执行远程 mutation。所有环境发布都会输出域名、数据库、Worker、分支和完整 Git SHA；secrets 按 Wrangler 环境独立配置，不由发布脚本写入或打印。
 
@@ -155,7 +160,7 @@ flutter build ipa --flavor prod --release
 flutter build appbundle
 ```
 
-`dev` flavor 固定连接 `https://dev.watchtower.damao.io`，`prod` 与当前无 flavor 的 Android 构建固定连接 `https://watchtower.damao.io`。未知 flavor 会直接启动失败。本地代理联调时可使用非秘密编译参数显式覆盖：
+`dev` flavor 固定连接 `https://dev.watchtower.damao.io`，`prod` 与当前无 flavor 的 Android 构建固定连接 `https://watchtower.damao.io`。未知 flavor 会直接启动失败。本地代理联调时可使用非秘密编译参数显式覆盖；override 只接受 localhost、loopback 或私有网络地址，不能把 flavor 隐式切到另一套远程环境：
 
 ```sh
 flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
@@ -228,22 +233,22 @@ Web access token 只保存在 Auth0 SPA SDK 的内存缓存中；刷新页面时
 - `migrations/` 是 D1 schema 的演进记录。不要修改已经应用的 migration；schema 变化应新增 migration。
 - `wrangler.jsonc` 是 Worker 入口、D1 绑定、静态资源、必需 secrets、计划任务、可观测性和生产域名的事实来源。
 - 当前生产环境关闭 `workers.dev`，仅通过 `watchtower.damao.io` 提供服务。
-- `env.dev` 部署为独立的 `watchtower-daily-brief-dev` Worker，通过 `dev.watchtower.damao.io` 提供测试环境。它使用独立 D1、R2 和队列，并关闭 cron、语音生成和 queue consumers。Web 页面由 Cloudflare Access 的精确邮箱策略保护；更具体的 `/api/*` Access Bypass 允许原生客户端连接，公开接口仍遵循公开 API 契约，受保护接口仍由 Worker 的 Auth0 验证和 D1 白名单授权。Access 成员名单只在 Cloudflare Dashboard 管理，不写入仓库。
-- 生产部署前先应用新的远程 migration，再部署 Worker：
+- `env.dev` 部署为独立的 `watchtower-daily-brief-dev` Worker，通过 `dev.watchtower.damao.io` 提供测试环境。它使用独立 D1、R2、完整 pipeline/audio/cover/push/exploration queue consumers 和 sandbox APNs，并保持 `crons=[]`，不会自行生成或广播。Web 页面由 Cloudflare Access 的精确邮箱策略保护；更具体的 `/api/*` Access Bypass 允许原生客户端连接，公开接口仍遵循公开 API 契约，受保护接口仍由 Worker 的 Auth0 验证和 D1 白名单授权。Access 成员名单只在 Cloudflare Dashboard 管理，不写入仓库。
+- 共享 Dev 的 migration、部署与 smoke 通过一个带确认关卡的命令执行：
 
 ```sh
-npm run db:migrate:remote
-npm run deploy
+npm run release:dev
 ```
 
-Dev 部署使用显式环境命令，不读取生产 `.env`：
+Dev 全链路验证完成并生成同 SHA 的已通过 receipt 后，生产 migration、部署、版本校验、smoke 与失败时 Worker 自动回滚通过以下命令执行：
 
 ```sh
-npm run db:migrate:dev
-npm run deploy:dev
+npm run release:prod
 ```
 
-这两个命令会改变远程状态，只应在确认 Cloudflare 账户、数据库和目标环境无误后执行。部署后至少检查首页、归档页和公开 API：
+这两个命令会改变远程状态，只应在确认 Cloudflare 账户、数据库、Worker、域名、分支和完整 Git SHA 后执行。旧的 `db:migrate:remote`、`deploy` 与 `deploy:dev` 已 fail closed。独立的显式 migration 与 Worker rollback 入口分别为 `db:migrate:dev`、`db:migrate:prod`、`rollback:dev` 和 `rollback:prod`；Worker rollback 不会回滚 D1、R2、queue 或外部调用。Dev 与生产 deploy/smoke 失败时，发布命令会把 Worker 自动回滚至 preflight 捕获的版本并重新验证公开服务；D1 migration 不做破坏性回退。
+
+发布脚本会自动执行 cache-busted 页面、API、metadata 与生产静态资源 hash smoke；只读独立检查仍可使用：
 
 ```sh
 curl --fail --show-error https://watchtower.damao.io/

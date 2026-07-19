@@ -9,7 +9,7 @@ describe("release preflight", () => {
     expect(library).toContain("state.sha !== remoteSha");
     expect(library).toContain('metadata.environment !== "dev"');
     expect(library).toContain('metadata.workerVersionTag !== `git-${sha}`');
-    expect(release).toContain("assertCiPassed(state.sha)");
+    expect(release).toContain("assertCiPassed(state.sha, state.branch)");
     expect(release).toContain("assertDevValidatedSha");
   });
 

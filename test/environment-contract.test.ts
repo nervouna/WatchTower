@@ -71,7 +71,15 @@ describe("deployment environment contract", () => {
       DEV_PIPELINE_QUEUE: { send: async (body: unknown) => { sent.push(body); } },
     } as unknown as Env;
     const endpoint = "https://example.com/api/dev/pipeline-runs";
+    const request = () => new Request(endpoint, {
+      method: "POST", headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: "final", targetDate: "2026-07-19" }),
+    });
     expect((await handleRequest(new Request(endpoint, { method: "POST" }), devEnv)).status).toBe(401);
+    await env.DB.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind("apple|dev-operator").run();
+    expect((await handleRequest(request(), devEnv)).status).toBe(403);
+    await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)")
+      .bind("apple|dev-operator", "2026-07-19T00:00:00.000Z").run();
 
     const invalid = await handleRequest(new Request(endpoint, {
       method: "POST", headers: { ...authHeader, "Content-Type": "application/json" },
@@ -80,19 +88,15 @@ describe("deployment environment contract", () => {
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ error: { code: "INVALID_DEV_PIPELINE_RUN" } });
 
-    const request = () => new Request(endpoint, {
-      method: "POST", headers: { ...authHeader, "Content-Type": "application/json" },
-      body: JSON.stringify({ stage: "final", targetDate: "2026-07-19" }),
-    });
     const queued = await handleRequest(request(), devEnv);
     expect(queued.status).toBe(202);
     const body = await queued.json() as { runId: string };
-    expect(body).toMatchObject({ status: "queued", pollAfterSeconds: 3 });
+    expect(body).toMatchObject({ status: "queued", pollAfterSeconds: 3, acceptedNewAttempt: true });
     expect(sent).toHaveLength(1);
 
     const duplicate = await handleRequest(request(), devEnv);
     expect(duplicate.status).toBe(202);
-    expect(await duplicate.json()).toMatchObject({ runId: body.runId, status: "queued" });
+    expect(await duplicate.json()).toMatchObject({ runId: body.runId, status: "queued", acceptedNewAttempt: false });
     expect(sent).toHaveLength(1);
 
     const status = await handleRequest(new Request(`${endpoint}/${body.runId}`, { headers: authHeader }), devEnv);

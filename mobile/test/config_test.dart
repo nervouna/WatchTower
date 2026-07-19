@@ -37,7 +37,43 @@ void main() {
         'http://127.0.0.1:8787',
       );
       expect(
+        AppConfig.resolveApiBaseUrl(
+          flavor: 'dev',
+          override: 'http://192.168.10.20:8787',
+        ),
+        'http://192.168.10.20:8787',
+      );
+      expect(
         () => AppConfig.resolveApiBaseUrl(override: 'not-a-url'),
+        throwsStateError,
+      );
+    });
+
+    test('rejects public and cross-environment overrides', () {
+      for (final override in <String>[
+        'https://watchtower.damao.io',
+        'https://dev.watchtower.damao.io',
+        'https://example.com',
+        'https://fcorp.example.com',
+        'http://10.999.1.1:8787',
+        'http://user:password@127.0.0.1:8787',
+      ]) {
+        expect(
+          () => AppConfig.resolveApiBaseUrl(
+            flavor: 'dev',
+            override: override,
+          ),
+          throwsStateError,
+        );
+      }
+    });
+
+    test('does not let a local override bypass an unknown flavor', () {
+      expect(
+        () => AppConfig.resolveApiBaseUrl(
+          flavor: 'preview',
+          override: 'http://127.0.0.1:8787',
+        ),
         throwsStateError,
       );
     });

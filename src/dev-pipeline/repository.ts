@@ -52,9 +52,21 @@ export async function claimDevPipelineRun(db: D1Database, runId: string, now: st
     `UPDATE dev_pipeline_runs
      SET status = 'processing', attempt_count = attempt_count + 1, error_code = NULL,
          started_at = ?, finished_at = NULL
-     WHERE run_id = ? AND (status = 'queued' OR (status IN ('processing', 'failed') AND ? = 1))`,
+     WHERE run_id = ? AND (status = 'queued' OR (status = 'processing' AND ? = 1))`,
   ).bind(now, runId, recover ? 1 : 0).run();
   return result.meta.changes > 0 ? getDevPipelineRun(db, runId) : null;
+}
+
+export async function retryDevPipelineRun(
+  db: D1Database,
+  runId: string,
+  errorCode: string,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE dev_pipeline_runs
+     SET status = 'queued', outcome = NULL, error_code = ?, finished_at = NULL
+     WHERE run_id = ? AND status = 'processing'`,
+  ).bind(errorCode, runId).run();
 }
 
 export async function finishDevPipelineRun(

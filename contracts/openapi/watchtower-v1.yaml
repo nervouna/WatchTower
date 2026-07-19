@@ -24,7 +24,7 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/DevPipelineRunRequest' } } }
       responses:
         '202':
-          description: Dev pipeline run queued or existing idempotent run returned
+          description: Dev pipeline run queued or existing idempotent run returned; acceptedNewAttempt distinguishes them
           content: { application/json: { schema: { $ref: '#/components/schemas/DevPipelineRun' } } }
         '400': { $ref: '#/components/responses/ProtectedError' }
         '401': { $ref: '#/components/responses/ProtectedError' }
@@ -346,6 +346,9 @@ components:
         errorCode: { anyOf: [{ type: string }, { type: 'null' }] }
         attemptCount: { type: integer, minimum: 0 }
         workerVersionTag: { type: string }
+        acceptedNewAttempt:
+          type: boolean
+          description: Present on POST responses; true only when this request created or re-queued an attempt
         pollAfterSeconds: { type: integer, minimum: 1 }
         createdAt: { type: string, format: date-time }
         startedAt: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }

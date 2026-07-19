@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import path from "node:path";
 
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
@@ -29,8 +30,8 @@ export default defineConfig({
           APNS_TEAM_ID: "test-team-id",
           APNS_KEY_ID: "test-key-id",
           APNS_PRIVATE_KEY: "test-private-key",
-          PUSH_TOKEN_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-          PUSH_TOKEN_HMAC_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+          PUSH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 0x41).toString("base64"),
+          PUSH_TOKEN_HMAC_KEY: Buffer.alloc(32, 0x42).toString("base64"),
         },
         queueProducers: { DEV_PIPELINE_QUEUE: { queueName: "watchtower-dev-pipeline-runs" } },
         serviceBindings: {

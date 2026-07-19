@@ -13,11 +13,13 @@ flutter test
 flutter run --flavor dev
 ```
 
-The `dev` flavor is fixed to `https://dev.watchtower.damao.io`; `prod` and the flavorless Android build are fixed to `https://watchtower.damao.io`. Unknown flavors fail at startup. Use an explicit override only for local proxy or focused debugging:
+The `dev` flavor is fixed to `https://dev.watchtower.damao.io`; `prod` and the flavorless Android build are fixed to `https://watchtower.damao.io`. Unknown flavors fail at startup. Use an explicit override only for a localhost, loopback, or private-network proxy during focused debugging; public and cross-environment overrides fail closed:
 
 ```sh
 flutter run --flavor dev --dart-define=WATCHTOWER_API_BASE_URL=http://127.0.0.1:8787
 ```
+
+For the repository's short-lived physical-device Auth proxy, use the Mac's explicit private IP instead of loopback. Only `Debug-dev` includes the local-network usage description and `NSAllowsLocalNetworking`; production builds contain neither exception. The Settings screen displays the effective API base URL and strict `/api/meta` environment, Worker tag/version, and deployment time so device acceptance can prove the exact backend candidate.
 
 The single iOS `Runner` target exposes two shared schemes:
 

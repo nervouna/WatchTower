@@ -8,6 +8,7 @@ import '../app_model.dart';
 import '../auth/auth_controller.dart';
 import '../data/api_client.dart';
 import '../data/brief_repository.dart';
+import '../deployment/deployment_controller.dart';
 import '../models.dart';
 import '../push/push_controller.dart';
 import 'brief_view.dart';
@@ -253,6 +254,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final push = context.watch<PushController>();
     final auth = context.watch<AuthController>();
+    final deployment = context.watch<DeploymentController>();
     return ListView(
       padding: EdgeInsets.fromLTRB(
         ledgerHorizontalPadding(context),
@@ -305,6 +307,51 @@ class SettingsScreen extends StatelessWidget {
         const LedgerSectionTitle('应用信息'),
         const SizedBox(height: 8),
         const Text('WatchTower\n每日中文科技与产品情报简报\n外观跟随系统设置。'),
+        const SizedBox(height: 12),
+        _DeploymentInfo(deployment: deployment),
+      ],
+    );
+  }
+}
+
+class _DeploymentInfo extends StatelessWidget {
+  const _DeploymentInfo({required this.deployment});
+
+  final DeploymentController deployment;
+
+  @override
+  Widget build(BuildContext context) {
+    final metadata = deployment.metadata;
+    final machineStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SelectableText('API\n${deployment.apiBaseUrl}', style: machineStyle),
+        const SizedBox(height: 8),
+        if (metadata != null) ...[
+          Text('环境：${metadata.environment}'),
+          const SizedBox(height: 4),
+          SelectableText(
+            '版本：${metadata.workerVersionTag}\n'
+            'Worker ID：${metadata.workerVersionId}\n'
+            '部署时间：${metadata.deployedAt.toIso8601String()}',
+            style: machineStyle,
+          ),
+        ] else if (deployment.loading)
+          const Text('正在读取部署信息…')
+        else ...[
+          Text(
+            deployment.error ?? '尚未读取部署信息。',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: deployment.refresh,
+            child: const Text('重试'),
+          ),
+        ],
       ],
     );
   }
