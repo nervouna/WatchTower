@@ -37,6 +37,14 @@ export default tseslint.config(
     },
   },
   {
+    files: ["test-web/**/*.js", "vitest.web.config.js"],
+    languageOptions: {
+      globals: {
+        Response: "readonly",
+      },
+    },
+  },
+  {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: { process: "readonly", fetch: "readonly", console: "readonly" },

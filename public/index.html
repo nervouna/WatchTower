@@ -11,57 +11,53 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
     <link rel="stylesheet" href="/styles.css">
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.4.0/auth0-spa-js.production.js" integrity="sha384-4HtInVsou9+RJEQ0/2RM/578MlMOAPmcjvvNLiS1qzwk6wFIvU9ZHcF/QvP1sX92" crossorigin="anonymous" defer></script>
-    <script src="/app.js" defer></script>
+    <script type="module" src="/app.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主要内容</a>
     <header class="site-header">
-      <nav class="nav" aria-label="主要导航">
-        <a class="brand" href="/" aria-label="WatchTower 热点简报首页">
-          <img class="brand-mark" src="/favicon.svg" alt="" width="32" height="32">
-          <span>WatchTower</span>
-        </a>
-        <div class="nav-links">
-          <a data-nav="latest" href="/">最新简报</a>
-          <a data-nav="archive" href="/archive">历史归档</a>
+      <nav class="masthead" aria-label="主要导航">
+        <a class="wordmark" href="/" aria-label="WatchTower 首页">WatchTower</a>
+        <div class="masthead-links">
+          <a data-nav="latest" href="/">今日</a>
+          <a data-nav="archive" href="/archive">归档</a>
+          <button id="account-button" class="masthead-account" type="button">账号</button>
         </div>
       </nav>
     </header>
-    <main id="main" class="shell" tabindex="-1">
-      <div id="app" aria-live="polite" aria-busy="true">
-        <section class="state-card state-loading" aria-labelledby="loading-title">
-          <p class="eyebrow">WATCHTOWER</p>
-          <h1 id="loading-title" class="state-title">正在整理今日信号</h1>
-          <p class="state-copy">简报马上就绪。</p>
-          <div class="skeleton-lines" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+    <main id="main" tabindex="-1">
+      <div id="app" aria-busy="true">
+        <section class="page-state page-state-loading" aria-labelledby="loading-title">
+          <h1 id="loading-title">正在加载简报</h1>
+          <p>正在获取今天值得关注的技术与产品变化。</p>
+          <div class="text-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
         </section>
       </div>
     </main>
-    <footer class="footer">
-      <div class="footer-inner">
-        <p>每日 00:00 UTC 发布。内容由公开来源聚合整理，不代表平台官方排名。 <a href="/privacy">隐私说明</a></p>
-        <button id="feedback-mode-button" class="feedback-mode-button" type="button">反馈模式</button>
-      </div>
+    <footer class="site-footer">
+      <p>每日 00:00 UTC 发布。内容由公开来源聚合整理，不代表平台官方排名。 <a href="/privacy">隐私说明</a></p>
     </footer>
-    <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-dialog-title">
-      <div id="feedback-form">
-        <p class="eyebrow">ACCOUNT</p>
-        <h2 id="feedback-dialog-title" class="dialog-title">账号与反馈模式</h2>
-        <p id="feedback-account-copy" class="dialog-copy">使用 Apple 登录后可查看账号状态。阅读始终无需登录。</p>
-        <p id="feedback-user-id" class="account-user-id" hidden></p>
-        <p id="feedback-auth-error" class="feedback-auth-error" role="alert" hidden></p>
-        <div class="dialog-actions">
-          <button class="dialog-button dialog-button-secondary" type="button" data-dialog-cancel>取消</button>
-          <button id="copy-user-id" class="dialog-button dialog-button-secondary" type="button" hidden>复制 user ID</button>
-          <button id="logout-button" class="dialog-button dialog-button-secondary" type="button" hidden>退出登录</button>
-          <button id="delete-account-button" class="dialog-button dialog-button-danger" type="button" hidden>删除账号</button>
-          <button id="login-button" class="dialog-button dialog-button-primary" type="button">使用 Apple 登录</button>
+
+    <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
+      <form method="dialog" class="account-dialog-inner">
+        <header class="dialog-header">
+          <h2 id="account-title">账号</h2>
+          <button class="text-button" type="submit" data-dialog-close>关闭</button>
+        </header>
+        <p id="account-copy" class="account-copy">使用 Apple 登录后可共享反馈。阅读始终无需登录。</p>
+        <p id="account-user-id" class="account-user-id" hidden></p>
+        <p id="account-error" class="account-error" role="alert" hidden></p>
+        <div class="account-actions">
+          <button id="login-button" class="control control-primary" type="button">使用 Apple 登录</button>
+          <button id="copy-user-id" class="control control-secondary" type="button" hidden>复制 user ID</button>
+          <button id="logout-button" class="control control-secondary" type="button" hidden>退出登录</button>
         </div>
-      </div>
+        <section id="danger-zone" class="danger-zone" hidden aria-labelledby="danger-title">
+          <h3 id="danger-title">危险操作</h3>
+          <p>删除账号会清除账号资料和可关联的反馈记录，此操作无法撤销。</p>
+          <button id="delete-account-button" class="control control-danger" type="button">删除账号</button>
+        </section>
+      </form>
     </dialog>
   </body>
 </html>

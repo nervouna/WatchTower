@@ -1,82 +1,99 @@
-# StyleSeed — Design Lock
+# StyleSeed — Editorial Ledger Design Lock
 
-<!--
-Locked design decisions for every WatchTower UI. Re-read this file before
-touching UI code. Change a locked value only after explicit user approval.
--->
+This file is the binding design contract for WatchTower web UI. It supersedes
+the former Radar Cyan, soft-radius, and card-surface direction. Mobile remains
+out of scope for this lock change.
 
 ## Product and surface
 
-- Product: WatchTower
-- App domain: daily Chinese technology and product intelligence brief
-- Surface: responsive, content-heavy editorial web application
-- Mobile surface: Flutter reading application for iPhone, iPad, and Android; it shares this lock instead of introducing a second visual identity
-- Primary tasks: scan the latest brief, understand why each signal matters, and browse the archive
-- Focal point: the current brief headline; every screen must have exactly one dominant focal point
+- Product: WatchTower, a daily Chinese technology and product intelligence brief.
+- Surface: responsive, content-heavy editorial web application.
+- Primary tasks: read the latest brief, understand why each signal matters,
+  explore supporting evidence, and browse the archive.
+- Focal point: the brief headline. Every screen has one dominant focal point.
+- Public contract: briefs, archive, audio, transcripts, explorations, and privacy
+  remain anonymously readable even when authentication fails.
 
-## Mobile application
+## Direction
 
-- Navigation: three root destinations, `今日`, `归档`, and `设置`; detail and privacy are spoke screens with standard back navigation
-- App shell: native safe areas, a compact WatchTower header, system bottom navigation, and a mini audio player only while audio is active
-- Offline: show cached text immediately and identify it with last-refresh context; audio remains online-only
-- Notifications: explain value in-product before requesting the iOS system permission; Android does not expose notification controls until its provider is implemented
-- Accessibility: honor Dynamic Type, VoiceOver/TalkBack order, keyboard navigation, and minimum 44pt iOS / 48dp Android touch targets
-- Responsive behavior: preserve the editorial hierarchy on tablets and wide Android windows; do not merely stretch phone cards edge to edge
-
-## Visual direction
-
-- Mood: precise, editorial, calm, focused, and moderately airy
-- Composition: one focal point and one accent; supporting content stays neutral
-- Base: fresh neutral surfaces, never a beige paper treatment or a dark-heavy brochure layout
-- Density: comfortable reading density with compact metadata
+- Name: Editorial Ledger.
+- Mood: precise, editorial, continuous, calm, and information-dense.
+- Composition: a publication masthead, a narrow issue/index rail, and one reading
+  column. Use type, rules, whitespace, and numbered entries instead of cards.
+- Reading measure: approximately 60–68 Chinese characters for long-form copy.
+- Spacing: an 8px baseline with 20px mobile and 32px desktop page gutters.
 
 ## Color
 
-- Key color (the only decorative accent): Radar Cyan `#0E7490`
-- Dark-mode accent: `#67E8F9`
-- Neutral palette: cool neutral greys for text, surfaces, dividers, inactive controls, and normal states
-- Accent use: primary action, links, rank markers, focus treatment, and the screen's focal point
-- Forbidden: default indigo, rainbow categories, decorative status colors, and a second emphasis hue
-- Semantic resolve: normal and complete states are neutral; amber is reserved for warnings, and red is reserved for errors. Every warning or error also uses text or an icon, never color alone.
+- Light page: `#FCFCFB`.
+- Light text: `#171717`; secondary text: `#62666B`; rule: `#D6D7D9`.
+- Light accent: editorial red `#B42318`.
+- Dark page: `#111315`.
+- Dark text: `#F4F4F1`; secondary text: `#A8ADB2`; rule: `#363A3E`.
+- Dark accent: `#FF8177`.
+- Accent is reserved for links, focus, the active navigation item, and selected
+  controls. Normal and complete states are neutral. Errors always include text.
+- Forbidden: gradients, glass, glow, decorative status colors, multiple accents,
+  and color-only meaning.
 
 ## Type
 
-- Font: system UI stack only; no web fonts
-- Stack: `system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`
-- Display: the same system stack, differentiated through scale, weight, line height, and spacing
-- Metadata: the system monospace stack may be used for dates, ranks, counts, and machine-readable identifiers
-- Performance invariant: font rendering must require zero font downloads
+- Editorial display: `"Iowan Old Style", Baskerville, "Songti SC", STSong,
+  "Noto Serif CJK SC", serif` for the wordmark, lead brief headline, brief-item
+  titles, section headings, and state-page headings.
+- Chinese lead headlines use the full reading-column width rather than a
+  `ch`-based measure, which produces an artificially square text block for CJK.
+- Body and controls: `system-ui, -apple-system, BlinkMacSystemFont,
+  "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+  sans-serif`.
+- Fonts require zero downloads.
+- Desktop body text is at least 16px. The responsive brief headline ranges from
+  approximately 42px to 68px, uses relaxed display leading, and remains the sole
+  visual focal point.
 
-## Radius personality
+## Shape and elevation
 
-- Personality: Soft
-- Content surfaces: `10–12px`
-- Buttons and inputs: `8px`
-- Nested elements: inner radius equals outer radius minus padding
-- Pills: reserved for compact tags and status labels; ordinary buttons and cards must not become pills
-
-## Elevation
-
-- Light mode: use surface tone separation first; reserve a subtle, two-layer, low-opacity shadow for genuinely raised surfaces
-- Dark mode: use a tonal surface ramp plus translucent hairlines; do not use drop shadows
-- Separation invariant: borders must not do all the elevation work in light mode
+- Content surfaces: square, with no radius, fill, or shadow.
+- Controls: 4px radius and at least 44px high.
+- Account dialog: 8px radius and the only raised surface; a low-opacity shadow is
+  allowed in both color schemes.
+- Pills and badges are forbidden. Tags are plain slash-separated metadata.
 
 ## Motion
 
-- Motion seed: Snap
-- Character: quick, precise, and decisive
-- Content: render headlines, ranks, summaries, and data immediately; never animate the payload into view
-- Interaction timing: approximately `100–160ms`
-- Allowed: short color, background, focus, and small positional transitions for direct interaction or state changes
-- Loading: a restrained shimmer is allowed when a real loading state needs it
-- Forbidden: staggered article entrances, scroll-linked motion, parallax, bouncing content, animated gradients, and infinite loops other than a loading skeleton
-- Reduced motion: remove every non-essential transition under `prefers-reduced-motion: reduce`
+- Content appears immediately. No entrance, reveal, scroll, parallax, shimmer,
+  spinner, or hover-lift motion.
+- Direct interaction transitions use `100–140ms` for color and border only.
+- `prefers-reduced-motion` removes non-essential transitions.
+
+## Content and component rules
+
+- Never use cards or nested cards as page structure.
+- Use semantic headings, paragraphs, lists, and horizontal rules for continuous
+  reading. Buttons are only for state changes or submissions; navigation and
+  disclosure-like reading actions retain link styling.
+- Do not repeat a heading with an eyebrow or generic explanatory subtitle.
+- Archive rows do not display `complete` or `partial` status labels; status remains
+  available in the data contract without interrupting date-and-count scanning.
+- Audio is a compact horizontal toolbar using native controls; podcast cover art
+  is not shown in the web reading flow.
+- Feedback, exploration, loading, empty, and failure states use local live regions
+  where needed. Never apply `aria-live` to the entire application root.
+
+## Responsive behavior
+
+- Maximum page width: approximately 1360px.
+- Above 960px: a 176px issue/index rail plus reading column.
+- At 960px and below: index links move below the brief header.
+- Below 640px: one column, preserved ranks, no horizontal overflow.
+- Verify at 1440×900, 1024×768, and 390×844 in light and dark modes.
 
 ## Quality gate
 
-- Build full screens through `$ss-build`.
-- Run `$ss-score` against real UI files after every UI build or material UI change.
-- Fix and re-score until the result is at least `80/100` before presenting the UI.
-- Treat `80` as the shipping floor, not a target to optimize past indefinitely.
+- Build material screens through `$ss-build`.
+- Run `$ss-score`, fix, and repeat until at least `80/100`.
+- Then run `$ss-verify` against real rendered happy, loading, empty, error,
+  archive, privacy, exploration, and account states.
+- Re-run the repository lint, typecheck, test, build, and diff checks.
 
-Locked: 2026-07-16
+Locked: 2026-07-19
