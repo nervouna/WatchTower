@@ -4,7 +4,7 @@ import { generateNarration, validateNarration } from "../src/audio/narration";
 import type { BriefPayload, NarrationScript } from "../src/domain/types";
 
 function brief(itemCount = 6): BriefPayload {
-  const sources = ["github", "hacker-news", "product-hunt", "kickstarter", "github", "hacker-news"] as const;
+  const sources = ["github", "hacker-news", "product-hunt", "kickstarter", "github", "hacker-news", "github"] as const;
   return {
     date: "2026-07-16",
     status: "complete",
@@ -89,5 +89,20 @@ describe("narration validation", () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ choices: [{ message: { content: "{}" } }] }));
     await expect(generateNarration("secret", brief(), { fetcher })).rejects.toThrow("NARRATION_VALIDATION_FAILED");
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [5, "116-120"],
+    [6, "98-110"],
+    [7, "85-100"],
+  ])("uses a feasible per-item length target for a %i-item narration", async (itemCount, expectedRange) => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ choices: [{ message: { content: "{}" } }] }));
+    await expect(generateNarration("secret", brief(itemCount), { fetcher })).rejects.toThrow("NARRATION_VALIDATION_FAILED");
+
+    const initialBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as { messages: Array<{ content: string }> };
+    const repairBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)) as { messages: Array<{ content: string }> };
+    expect(initialBody.messages[0]?.content).toContain(`four complete sentences totaling ${expectedRange} code points for every item`);
+    expect(repairBody.messages[3]?.content).toContain(`four complete sentences totaling ${expectedRange} code points`);
+    expect(repairBody.messages[3]?.content).toContain("validator hard limit of 75-130 code points");
   });
 });

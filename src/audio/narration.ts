@@ -77,13 +77,21 @@ export function validateNarration(value: unknown, brief: BriefPayload): Validati
 }
 
 function systemPrompt(itemCount: number): string {
+  const itemLengthTarget = narrationItemLengthTarget(itemCount);
   const lengthRule = itemCount <= 4
     ? `Total Unicode code points: ${String(84 + 115 * itemCount)}-${String(94 + 125 * itemCount)}.`
     : "Total Unicode code points: 650-900.";
   return `You write a factual Chinese spoken script for a daily technology brief. Return JSON only:
 {"opening_zh":"string","items":[{"entity_id":"string","text_zh":"string"}],"closing_zh":"string"}
-Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling 115-125 code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5-7 items the validator retains total 650-900 and legacy hard limits opening 40-100, each item 75-130, closing 20-60.
+Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling ${itemLengthTarget} code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5-7 items the validator retains total 650-900 and hard limits opening 40-100, each item 75-130, closing 20-60.
 Do not read tags, URLs, source lists, or feedback. Do not add facts, advice, predictions, evaluations, numbers, versions, percentages, or Latin technical names absent from the corresponding item evidence.`;
+}
+
+function narrationItemLengthTarget(itemCount: number): string {
+  if (itemCount <= 4) return "115-125";
+  if (itemCount === 5) return "116-120";
+  if (itemCount === 6) return "98-110";
+  return "85-100";
 }
 
 export function plannedItems(brief: BriefPayload): BriefPayload["items"] {
@@ -160,6 +168,8 @@ function parseJson(content: string): unknown {
 
 export async function generateNarration(apiKey: string, brief: BriefPayload, options: RetryOptions = {}): Promise<NarrationScript> {
   const itemCount = plannedItems(brief).length;
+  const itemLengthTarget = narrationItemLengthTarget(itemCount);
+  const itemHardLimit = itemCount <= 4 ? "115-125" : "75-130";
   const system = systemPrompt(itemCount);
   const user = briefInput(brief);
   const first = await complete(apiKey, [{ role: "system", content: system }, { role: "user", content: user }], options);
@@ -169,7 +179,7 @@ export async function generateNarration(apiKey: string, brief: BriefPayload, opt
     { role: "system", content: system },
     { role: "user", content: user },
     { role: "assistant", content: first },
-    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: ${OPENING} Every item must contain exactly four complete sentences totaling 115-125 code points, using only that item's supplied evidence. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between ${String(itemCount <= 4 ? 84 + 115 * itemCount : 650)} and ${String(itemCount <= 4 ? 94 + 125 * itemCount : 900)} code points. Do not introduce any number, percentage, version, or Latin technical name unless copied verbatim from that item's evidence. Return the complete JSON only.` },
+    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: ${OPENING} Every item must contain exactly four complete sentences totaling ${itemLengthTarget} code points, using only that item's supplied evidence. Measure every item separately and keep each one within the validator hard limit of ${itemHardLimit} code points. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between ${String(itemCount <= 4 ? 84 + 115 * itemCount : 650)} and ${String(itemCount <= 4 ? 94 + 125 * itemCount : 900)} code points. Do not introduce any number, percentage, version, or Latin technical name unless copied verbatim from that item's evidence. Return the complete JSON only.` },
   ], options);
   const repairValidation = validateNarration(parseJson(repaired), brief);
   if (!repairValidation.ok) throw new Error(`NARRATION_VALIDATION_FAILED:${repairValidation.errors.join(",")}`);

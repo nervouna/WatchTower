@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: WatchTower Public API
-  version: 1.1.0
-  description: Stable public, authenticated, and item exploration contract consumed by the WatchTower web and mobile clients.
+  version: 1.2.0
+  description: Stable public, authenticated, brief regeneration, and item exploration contract consumed by the WatchTower web and mobile clients.
 servers:
   - url: https://watchtower.damao.io
 paths:
@@ -135,6 +135,37 @@ paths:
         '401': { $ref: '#/components/responses/ProtectedError' }
         '403': { $ref: '#/components/responses/ProtectedError' }
         '503': { $ref: '#/components/responses/ProtectedError' }
+  /api/briefs/{date}/regeneration:
+    parameters:
+      - $ref: '#/components/parameters/Date'
+    get:
+      operationId: getBriefRegeneration
+      security: [{ auth0: [] }]
+      responses:
+        '200':
+          description: Latest regeneration job for the requested brief date
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/BriefRegeneration' } } }
+        '400': { $ref: '#/components/responses/ProtectedError' }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '404': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
+    post:
+      operationId: regenerateBrief
+      description: Queue an idempotent replay from candidates and evidence already stored for this date. It never re-runs Tavily and never sends a publication push.
+      security: [{ auth0: [] }]
+      responses:
+        '202':
+          description: Regeneration queued or the existing active job returned
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/BriefRegeneration' } } }
+        '400': { $ref: '#/components/responses/ProtectedError' }
+        '401': { $ref: '#/components/responses/ProtectedError' }
+        '403': { $ref: '#/components/responses/ProtectedError' }
+        '404': { $ref: '#/components/responses/ProtectedError' }
+        '409': { $ref: '#/components/responses/ProtectedError' }
+        '503': { $ref: '#/components/responses/ProtectedError' }
   /api/mobile/v1/push-subscriptions:
     put:
       operationId: upsertPushSubscription
@@ -256,10 +287,11 @@ components:
           properties: { id: { type: string } }
         capabilities:
           type: object
-          required: [feedback, audioRetry]
+          required: [feedback, audioRetry, briefRegenerate]
           properties:
             feedback: { type: boolean }
             audioRetry: { type: boolean }
+            briefRegenerate: { type: boolean }
     SourceKind: { type: string, enum: [hacker-news, product-hunt, github, kickstarter] }
     BriefStatus: { type: string, enum: [complete, partial] }
     SourceLink:
@@ -337,6 +369,19 @@ components:
       properties:
         briefs: { type: array, items: { $ref: '#/components/schemas/BriefSummary' } }
         nextCursor: { anyOf: [{ type: string }, { type: 'null' }] }
+    BriefRegeneration:
+      type: object
+      required: [briefDate, jobId, status]
+      properties:
+        briefDate: { type: string, format: date }
+        jobId: { type: string, format: uuid }
+        status: { type: string, enum: [queued, processing, succeeded, failed] }
+        attemptCount: { type: integer, minimum: 0 }
+        errorCode: { anyOf: [{ type: string }, { type: 'null' }] }
+        pollAfterSeconds: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
     PushSubscription:
       type: object
       description: The development app ID must use sandbox; the production app ID must use production.

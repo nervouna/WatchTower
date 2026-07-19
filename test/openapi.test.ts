@@ -11,11 +11,24 @@ function between(value: string, start: string, end: string): string {
 describe("checked-in OpenAPI contract", () => {
   it("documents Auth0 security, account APIs, allowlist failures, and audio retry", () => {
     expect(contract).toContain("auth0:");
-    for (const path of ["/api/auth/config", "/api/auth/me", "/api/auth/account", "/api/feedback", "/api/feedback/{entityId}", "/api/briefs/{date}/audio/retry"]) {
+    for (const path of ["/api/auth/config", "/api/auth/me", "/api/auth/account", "/api/feedback", "/api/feedback/{entityId}", "/api/briefs/{date}/audio/retry", "/api/briefs/{date}/regeneration"]) {
       expect(contract).toContain(`  ${path}:`);
     }
     for (const status of ["'401'", "'403'", "'502'", "'503'"]) expect(contract).toContain(status);
     expect(contract).toContain("const: no-store");
+  });
+
+  it("documents allowlisted evidence-only brief regeneration without publication push", () => {
+    expect(contract).toContain("version: 1.2.0");
+    const path = between(contract, "  /api/briefs/{date}/regeneration:\n", "  /api/mobile/v1/push-subscriptions:\n");
+    expect(path).toContain("operationId: getBriefRegeneration");
+    expect(path).toContain("operationId: regenerateBrief");
+    expect(path).toContain("already stored for this date");
+    expect(path).toContain("never re-runs Tavily");
+    expect(path).toContain("never sends a publication push");
+    for (const status of ["'202'", "'400'", "'401'", "'403'", "'404'", "'409'", "'503'"]) expect(path).toContain(status);
+    expect(contract).toContain("briefRegenerate:");
+    expect(contract).toContain("BriefRegeneration:");
   });
 
   it("documents the optional generated podcast cover and image endpoint", () => {
@@ -30,7 +43,7 @@ describe("checked-in OpenAPI contract", () => {
   });
 
   it("publishes the 1.1 exploration resource and optional brief feature switch", () => {
-    expect(contract).toContain("version: 1.1.0");
+    expect(contract).toContain("version: 1.2.0");
     expect(contract).toContain("/api/explorations/{briefDate}/{entityId}:");
     expect(contract).toContain("operationId: triggerItemExploration");
     expect(contract).toContain("ExplorationSections:");

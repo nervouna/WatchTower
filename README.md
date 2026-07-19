@@ -13,7 +13,7 @@ WatchTower 是一份面向开发者和产品从业者的中文科技情报日报
 - 区分完整简报与缺少部分来源的部分简报，并在生成延迟时提示读者。
 - 识别持续出现的项目，说明相对上一期发生了什么实质变化。
 - 提供按日期浏览的历史归档和带游标的公开 JSON API。
-- 公开阅读无需登录；白名单账号可通过 Sign in with Apple 进入反馈模式，将实体标记为“持续关注”“不相关”或“没意思”，并重试失败的语音生成。
+- 公开阅读无需登录；白名单账号可通过 Sign in with Apple 进入反馈模式，将实体标记为“持续关注”“不相关”或“没意思”，并使用受保护的维护接口重试语音或重生成历史简报。
 - 为每日语音简报异步生成 AI 播客封面，并在网页、App 和系统媒体播放器中展示；封面失败不影响文字或音频。
 - 可围绕已发布热点按需生成一次带出处的“拓展阅读”，覆盖背景、相关产品、外部观点、行业位置与后续信号。
 
@@ -28,11 +28,13 @@ WatchTower 运行在 Cloudflare Workers 上，使用 D1 保存候选内容、简
 | 23:30 | `final` | 再次刷新发生变化的证据，并生成最终版本。 |
 | 00:30 | `recovery` | 完整简报直接跳过；否则重试缺失来源，尚无简报时重试全部来源。 |
 
-流水线通过 Tavily 搜索和提取来源内容，每个来源优先保留一组候选，再在总上限内补充高质量结果。DeepSeek 根据候选证据和历史实体生成结构化中文内容；程序会校验字段长度、候选 ID、来源覆盖、连续性和 URL 等约束。第一次结果不合格时只允许一次修复请求。
+流水线通过 Tavily 搜索和提取来源内容，每个来源优先保留一组候选，再在总上限内补充高质量结果。DeepSeek 根据候选证据和历史实体生成结构化中文内容；生成输入显式携带 `brief_date`，并要求产出对应日期的中文科技日报。程序会校验字段长度、候选 ID、来源覆盖、连续性、URL，以及 headline/intro 是否错误地把整期定义为“本周”或“周报”。第一次结果不合格时只允许一次修复请求，修复仍会携带目标日期和单日简报要求。
 
 “拓展阅读”只接受已发布简报中的 `briefDate` 与 `entityId`，不接受自由搜索词。HTTP 请求只负责幂等触发；独立 Cloudflare Queue 依次完成四类 Tavily Advanced Search、最多十页 Advanced Extract 和 DeepSeek 结构化生成。每条 Search 查询最多 380 个 Unicode code points；部分 Search 成功时继续研究，全部失败或 Extract 失败时保留真实阶段错误并按队列策略重试或终止。DeepSeek 的结构、字段、长度、引用和 URL 约束会完整写入 prompt，第一次结构校验失败后只修复一次。合法单域名引用发布为 `partial`；固定板块齐全且引用至少两个域名时才为 `complete`。模型阶段失败会保留已有 evidence，后续人工触发直接重跑 DeepSeek；真正零证据不会保存空 evidence。同一实体匿名共享 24 小时缓存，过期时先返回旧结果再异步刷新。D1 以 UTC 日原子预留 credits，默认每日最多预留 120 credits，每个新任务保守预留 12 credits；失败任务不返还预留，实际 Tavily credits 与 DeepSeek tokens 按调用累计。
 
 发布门禁以内容为准：除 `collect` 外，只要目标日期已经保存至少一条可用规范化候选，就可以进入生成流程；候选既可以来自当前阶段，也可以来自当天较早阶段保存的证据。四个来源全部成功时状态为 `complete`，否则为 `partial` 并保留缺失来源。来源数量只描述完整度，不决定能否发布。零候选不会调用模型，模型结果为零条目或未通过验证时也绝不写入简报。同一阶段可安全重试；如果最终生成失败，已有的有效草稿会被保留；如果候选证据没有变化，则不会重复调用模型。
+
+历史重生成只重放目标日期已保存在 D1 的 candidates/evidence，包括来源、标题、平台 URL、原始 URL、搜索摘要、提取正文、搜索分数、排名和 content hash；它不会重新调用 Tavily，也不把当前搜索结果当作历史输入。D1 保存的是 DeepSeek 实际使用的生成证据，不是 Tavily Search/Extract 逐字节完整 HTTP JSON 响应归档。重生成只使用严格早于目标日期的最近一期实体上下文；成功后原日期、发布时间、`complete`/`partial` 状态和缺失来源保持不变，并按新内容补排音频和封面，但不会创建 push batch、delivery 或 APNs 消息。模型或修复失败时，已有文字、音频和封面保持不变。
 
 语音简报会随文字条目数量调整长度：1–4 条按排名朗读全部条目并生成短音频，5 条及以上沿用 5–7 条且尽量覆盖来源的选取规则。生产环境通过内部变量 `BRIEF_PUSH_ENABLED=true` 启用发布推送；隔离 Dev 和静默恢复运行可设为 `false`，此时不会创建推送批次、delivery 或队列消息。
 
@@ -117,6 +119,7 @@ npm run dev
 | `npm run allowlist -- add <user-id> [--note <text>] [--remote\|--dev]` | 添加或更新白名单记录；默认仅操作本地 D1。 |
 | `npm run allowlist -- remove <user-id> [--remote\|--dev]` | 移除白名单权限；默认仅操作本地 D1。 |
 | `npm run cover:enqueue -- [YYYY-MM-DD]` | 为指定日期或最新一期补排播客封面任务。 |
+| `npm run brief:regenerate -- YYYY-MM-DD [...]` | 使用临时 Auth0 access token，按参数顺序逐期提交并轮询历史重生成。 |
 | `npm run deploy` | 使用本地 `.env` 中的 secrets 部署到 Cloudflare。 |
 | `npm run deploy:dev` | 部署隔离的 `watchtower-daily-brief-dev` Worker 到 `dev.watchtower.damao.io`。 |
 | `npm run db:migrate:dev` | 显式应用 Dev D1 migrations；不会修改生产 D1。 |
@@ -124,6 +127,12 @@ npm run dev
 白名单命令使用 `--remote` 明确选择生产 D1，或使用 `--dev` 明确选择隔离的远程 Dev D1；两个参数不能同时使用。
 
 `cover:enqueue` 调用 Auth0 白名单保护的补排接口。运行时通过当前 shell 临时提供有效 access token，例如 `WATCHTOWER_AUTH_TOKEN=... npm run cover:enqueue -- 2026-07-18`；不要将短期 token 写入仓库。
+
+`brief:regenerate` 同样只从当前 shell 的 `WATCHTOWER_AUTH_TOKEN` 读取 token，不打印或保存 token。命令严格按参数顺序执行，前一期成功后才提交下一期，例如：
+
+```sh
+WATCHTOWER_AUTH_TOKEN=... npm run brief:regenerate -- 2026-07-16 2026-07-17 2026-07-18
+```
 
 ## 移动客户端
 
@@ -184,15 +193,17 @@ Web 和移动端使用 Auth0 Universal Login，并只启用 Sign in with Apple�
 | `PUT` | `/api/feedback/:entityId` | 保存反馈，请求体为 `{"value":"follow","briefDate":"YYYY-MM-DD"}`。 |
 | `DELETE` | `/api/feedback/:entityId` | 清除实体反馈。 |
 | `GET` | `/api/auth/config` | 返回公开的 Auth0 客户端配置。 |
-| `GET` | `/api/auth/me` | 返回当前 user ID 和反馈、语音重试能力。 |
+| `GET` | `/api/auth/me` | 返回当前 user ID 和反馈、语音重试、历史重生成能力。 |
 | `DELETE` | `/api/auth/account` | 删除当前 token 对应的账号，不接受客户端指定其他 user ID。 |
 | `POST` | `/api/briefs/:date/audio/retry` | 白名单用户重试失败或未完成的语音生成。 |
+| `POST` | `/api/briefs/:date/regeneration` | 白名单用户用该日期的存量证据幂等创建异步重生成任务，返回 `202`。 |
+| `GET` | `/api/briefs/:date/regeneration` | 白名单用户查询 `queued`、`processing`、`succeeded` 或 `failed` 状态。 |
 
-可用反馈值为 `follow`、`irrelevant` 和 `uninteresting`。反馈只能写入确实出现在所声明已发布简报中的实体。反馈响应使用 `Cache-Control: no-store`，也不会开放公共 CORS。
+可用反馈值为 `follow`、`irrelevant` 和 `uninteresting`。反馈只能写入确实出现在所声明已发布简报中的实体。所有受保护响应使用 `Cache-Control: no-store`，也不会开放公共 CORS。重生成接口对无效日期返回 `400 INVALID_DATE`，缺少或无效 token 返回 `401 UNAUTHORIZED`，非白名单用户返回 `403 FORBIDDEN`，无已发布简报返回 `404 BRIEF_NOT_FOUND`，无存量候选返回 `409 BRIEF_REGENERATION_UNAVAILABLE`，Auth0/JWKS 暂不可用返回 `503 AUTH_UNAVAILABLE`。
 
 Web access token 只保存在 Auth0 SPA SDK 的内存缓存中；刷新页面时通过 Auth0 SSO cookie 静默恢复。Flutter 使用 Auth0 Credentials Manager 保存并更新凭证。合法但未加入白名单的账号仍可查看和复制自己的 user ID，但不能读取或写入反馈，也不能重试语音。
 
-账号删除会先撤销 D1 白名单并清除反馈审计中的 user ID，再通过仅有 `delete:users` 权限的 Auth0 M2M 应用删除当前 Auth0 用户。Auth0、Apple、DNS、远程 migration、部署和远程白名单变更均属于外部或生产操作，需要单独授权。
+账号删除会先撤销 D1 白名单并清除反馈与历史重生成审计中的 user ID，再通过仅有 `delete:users` 权限的 Auth0 M2M 应用删除当前 Auth0 用户。Auth0、Apple、DNS、远程 migration、部署和远程白名单变更均属于外部或生产操作，需要单独授权。
 
 ### 拓展阅读
 

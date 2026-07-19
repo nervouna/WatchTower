@@ -10,6 +10,7 @@ import {
   removeEntityFeedback,
   getBriefAudio,
   getBriefCover,
+  getEntityCatalog,
   queueBriefAudio,
   queueBriefCover,
   claimBriefAudio,
@@ -88,7 +89,7 @@ function briefDraft(date: string, title = "首个热点项目"): BriefDraft {
 
 describe("D1 repository", () => {
   beforeEach(async () => {
-    await env.DB.exec("DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
+    await env.DB.exec("DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_regenerations; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates; DELETE FROM ingestion_runs;");
   });
 
   it("creates all required tables through migrations", async () => {
@@ -98,6 +99,7 @@ describe("D1 repository", () => {
       "ingestion_runs", "candidates", "entities", "briefs", "brief_items", "item_sources",
       "entity_feedback", "brief_audio", "brief_covers", "push_subscriptions", "brief_push_batches", "brief_push_deliveries",
       "item_explorations", "exploration_daily_usage",
+      "brief_regenerations",
     ]));
     const pushColumns = await env.DB.prepare("PRAGMA table_info(push_subscriptions)").all<{ name: string }>();
     expect(pushColumns.results.map((column) => column.name)).toContain("app_id");
@@ -233,6 +235,34 @@ describe("D1 repository", () => {
     expect(payload?.items).toHaveLength(1);
     expect(payload?.items[0]?.title).toBe("更新后的热点项目");
     expect(payload?.sourceCounts.github).toBe(1);
+  });
+
+  it("builds historical entity context only from the nearest earlier brief", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-15", "十五日摘要"));
+    await replaceBrief(env.DB, briefDraft("2026-07-17", "十七日摘要"));
+
+    const onSixteenth = await getEntityCatalog(env.DB, "2026-07-16");
+    expect(onSixteenth).toEqual([
+      expect.objectContaining({ lastSeenDate: "2026-07-15", previousSummary: briefDraft("2026-07-15", "十五日摘要").items[0]!.summary }),
+    ]);
+    const onSeventeenth = await getEntityCatalog(env.DB, "2026-07-17");
+    expect(onSeventeenth[0]).toMatchObject({ lastSeenDate: "2026-07-15" });
+    const onEighteenth = await getEntityCatalog(env.DB, "2026-07-18");
+    expect(onEighteenth[0]).toMatchObject({ lastSeenDate: "2026-07-17" });
+  });
+
+  it("excludes entities first seen after a historical target date", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-18"));
+    expect(await getEntityCatalog(env.DB, "2026-07-16")).toEqual([]);
+  });
+
+  it("does not move global entity date boundaries backward during historical replacement", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-18"));
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const row = await env.DB.prepare(
+      "SELECT first_seen_date, last_seen_date FROM entities WHERE canonical_key = ?",
+    ).bind("github:acme/repo").first<{ first_seen_date: string; last_seen_date: string }>();
+    expect(row).toEqual({ first_seen_date: "2026-07-16", last_seen_date: "2026-07-18" });
   });
 
   it("stores one mutable feedback value per entity and preserves it across brief replacement", async () => {

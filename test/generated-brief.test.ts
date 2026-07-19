@@ -33,6 +33,27 @@ describe("validateGeneratedBrief", () => {
     expect(validateGeneratedBrief(validBrief(), { candidates, entities, enforceSourceQuota: false }).ok).toBe(true);
   });
 
+  it.each([
+    ["headline", (brief: ReturnType<typeof validBrief>) => (brief.headline_zh = "开发者周报：重点项目更新")],
+    ["intro", (brief: ReturnType<typeof validBrief>) => (brief.intro_zh = "本周科技动态集中在开发工具、人工智能产品与新硬件发布，以下内容均来自当前候选证据并经过聚合整理。")],
+    ["biweekly", (brief: ReturnType<typeof validBrief>) => (brief.headline_zh = "开发者双周报：重点项目更新")],
+  ])("rejects a non-daily %s header", (_label, mutate) => {
+    const brief = validBrief();
+    mutate(brief);
+    const result = validateGeneratedBrief(brief, { candidates, entities, enforceSourceQuota: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toEqual(["NON_DAILY_HEADER"]);
+  });
+
+  it("allows daily wording and weekly terms inside item content", () => {
+    const brief = validBrief();
+    brief.headline_zh = "开发者主题简报：重点项目更新";
+    brief.intro_zh = "本期简报集中在开发工具、人工智能产品与新硬件发布，以下内容均来自当前候选证据并经过聚合整理。";
+    brief.items[0]!.title_zh = "技术周刊发布新版本";
+    brief.items[0]!.summary_zh += "该项目本周发布了新版本。";
+    expect(validateGeneratedBrief(brief, { candidates, entities, enforceSourceQuota: false }).ok).toBe(true);
+  });
+
   it("rejects a brief with no publishable items", () => {
     const brief = validBrief();
     brief.items = [];

@@ -8,7 +8,7 @@ import type { BriefPayload, NarrationScript } from "../domain/types";
 export interface BriefAudioJob { kind?: "brief-audio"; briefDate: string; contentHash: string }
 export const AUDIO_MODEL = "mimo-v2.5-tts";
 export const AUDIO_VOICE = "冰糖";
-export const NARRATION_PROMPT_VERSION = "narration-v2-adaptive";
+export const NARRATION_PROMPT_VERSION = "narration-v3-adaptive-length";
 
 function audioEnabled(value: unknown): boolean { return value === "true"; }
 

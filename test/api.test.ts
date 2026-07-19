@@ -3,7 +3,7 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleRequest } from "../src/http/router";
-import { replaceBrief, type BriefDraft } from "../src/storage/repository";
+import { replaceBrief, upsertCandidates, type BriefDraft } from "../src/storage/repository";
 
 function draft(date = "2026-07-16"): BriefDraft {
   return {
@@ -66,7 +66,7 @@ describe("public API", () => {
   beforeEach(async () => {
     deletedManagementUrl = null;
     managementDeleteStatus = 204;
-    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities;");
+    await env.DB.exec("DELETE FROM feedback_allowlist; DELETE FROM entity_feedback; DELETE FROM item_explorations; DELETE FROM exploration_daily_usage; DELETE FROM brief_regenerations; DELETE FROM brief_covers; DELETE FROM brief_audio; DELETE FROM item_sources; DELETE FROM brief_items; DELETE FROM briefs; DELETE FROM entities; DELETE FROM candidates;");
     await env.DB.prepare("INSERT INTO feedback_allowlist (user_id, note, created_at) VALUES (?, NULL, ?)").bind("apple|allowed-user", now.toISOString()).run();
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.wav");
     await env.BRIEF_AUDIO.delete("briefs/2026-07-16/hash.cover");
@@ -92,13 +92,13 @@ describe("public API", () => {
     expect(me.status).toBe(200);
     expect(me.headers.get("Cache-Control")).toBe("no-store");
     expect(me.headers.get("Access-Control-Allow-Origin")).toBeNull();
-    expect(await me.json()).toEqual({ user: { id: "apple|allowed-user" }, capabilities: { feedback: true, audioRetry: true } });
+    expect(await me.json()).toEqual({ user: { id: "apple|allowed-user" }, capabilities: { feedback: true, audioRetry: true, briefRegenerate: true } });
   });
 
   it("keeps a valid non-allowlisted session but rejects capability APIs", async () => {
     await env.DB.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind("apple|allowed-user").run();
     const me = await handleRequest(new Request("https://example.com/api/auth/me", { headers: authHeader }), env, now);
-    expect(await me.json()).toMatchObject({ capabilities: { feedback: false, audioRetry: false } });
+    expect(await me.json()).toMatchObject({ capabilities: { feedback: false, audioRetry: false, briefRegenerate: false } });
     const feedback = await handleRequest(new Request("https://example.com/api/feedback", { headers: authHeader }), env, now);
     expect(feedback.status).toBe(403);
     expect(await feedback.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
@@ -109,6 +109,9 @@ describe("public API", () => {
     const brief = await handleRequest(new Request("https://example.com/api/briefs/latest"), env, now);
     const entityId = ((await brief.json()) as { items: Array<{ entityId: string }> }).items[0]!.entityId;
     await env.DB.prepare("INSERT INTO entity_feedback (entity_id, feedback, source_brief_date, created_at, updated_at, updated_by_user_id) VALUES (?, 'follow', '2026-07-16', ?, ?, ?)").bind(entityId, now.toISOString(), now.toISOString(), "apple|allowed-user").run();
+    await env.DB.prepare(
+      "INSERT INTO brief_regenerations (job_id, brief_date, status, requested_user_id, created_at, updated_at) VALUES ('audit-job', '2026-07-16', 'failed', ?, ?, ?)",
+    ).bind("apple|allowed-user", now.toISOString(), now.toISOString()).run();
     const response = await handleRequest(new Request("https://example.com/api/auth/account", {
       method: "DELETE",
       headers: { ...authHeader, "Content-Type": "application/json" },
@@ -118,6 +121,7 @@ describe("public API", () => {
     expect(deletedManagementUrl).toBe("https://tenant.test.invalid/api/v2/users/apple%7Callowed-user");
     expect(await env.DB.prepare("SELECT 1 FROM feedback_allowlist WHERE user_id = ?").bind("apple|allowed-user").first()).toBeNull();
     expect(await env.DB.prepare("SELECT updated_by_user_id FROM entity_feedback WHERE entity_id = ?").bind(entityId).first()).toEqual({ updated_by_user_id: null });
+    expect(await env.DB.prepare("SELECT requested_user_id FROM brief_regenerations WHERE job_id = 'audit-job'").first()).toEqual({ requested_user_id: null });
   });
 
   it("treats an already-missing Auth0 user as deleted and stabilizes other upstream failures", async () => {
@@ -232,6 +236,65 @@ describe("public API", () => {
     expect(queued.headers.get("Cache-Control")).toBe("no-store");
     expect(queued.headers.get("Access-Control-Allow-Origin")).toBeNull();
     expect(await (await handleRequest(request(), env, now)).json()).toMatchObject({ status: "already-pending" });
+  });
+
+  it("protects, validates, and idempotently queues historical brief regeneration", async () => {
+    const endpoint = "https://example.com/api/briefs/2026-07-16/regeneration";
+    const unauthorized = await handleRequest(new Request(endpoint, { method: "POST" }), env, now);
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get("Cache-Control")).toBe("no-store");
+    expect(unauthorized.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const invalid = await handleRequest(new Request("https://example.com/api/briefs/2026-02-30/regeneration", { method: "POST", headers: authHeader }), env, now);
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { code: "INVALID_DATE" } });
+
+    const missing = await handleRequest(new Request(endpoint, { method: "POST", headers: authHeader }), env, now);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: { code: "BRIEF_NOT_FOUND" } });
+
+    await replaceBrief(env.DB, draft());
+    const unavailable = await handleRequest(new Request(endpoint, { method: "POST", headers: authHeader }), env, now);
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toMatchObject({ error: { code: "BRIEF_REGENERATION_UNAVAILABLE" } });
+
+    await upsertCandidates(env.DB, [{
+      id: "candidate_saved",
+      targetDate: "2026-07-16",
+      source: "github",
+      title: "Repo",
+      platformUrl: "https://github.com/acme/repo",
+      canonicalKey: "github:acme/repo",
+      canonicalUrl: "https://github.com/acme/repo",
+      originalUrl: null,
+      snippet: "Saved evidence",
+      extractedContent: "Saved extracted evidence",
+      score: 1,
+      rank: 1,
+      contentHash: "saved-hash",
+    }], now.toISOString());
+    const queued = await handleRequest(new Request(endpoint, { method: "POST", headers: authHeader }), env, now);
+    expect(queued.status).toBe(202);
+    expect(queued.headers.get("Cache-Control")).toBe("no-store");
+    expect(queued.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    const queuedBody = await queued.json() as { jobId: string; status: string };
+    expect(queuedBody).toMatchObject({ status: "queued" });
+
+    const duplicate = await handleRequest(new Request(endpoint, { method: "POST", headers: authHeader }), env, now);
+    expect(duplicate.status).toBe(202);
+    expect(await duplicate.json()).toMatchObject({ jobId: queuedBody.jobId, status: "queued" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM brief_regenerations").first("count")).toBe(1);
+
+    const status = await handleRequest(new Request(endpoint, { headers: authHeader }), env, now);
+    expect(status.status).toBe(200);
+    expect(await status.json()).toMatchObject({ briefDate: "2026-07-16", jobId: queuedBody.jobId, status: "queued", attemptCount: 0 });
+  });
+
+  it("forbids regeneration for an authenticated non-allowlisted user", async () => {
+    await env.DB.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind("apple|allowed-user").run();
+    const response = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/regeneration", { method: "POST", headers: authHeader }), env, now);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
   });
 
   it("authenticates, stores, reads, replaces, and clears entity feedback without caching or CORS", async () => {

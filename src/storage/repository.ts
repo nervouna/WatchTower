@@ -123,6 +123,20 @@ export interface BriefCoverRow {
   generated_at: string | null;
 }
 
+export type BriefRegenerationStatus = "queued" | "processing" | "succeeded" | "failed";
+
+export interface BriefRegenerationRow {
+  job_id: string;
+  brief_date: string;
+  status: BriefRegenerationStatus;
+  requested_user_id: string | null;
+  attempt_count: number;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
 function parseStringArray(value: string): string[] {
   try {
     const parsed: unknown = JSON.parse(value);
@@ -272,15 +286,19 @@ export async function getEntityCatalog(db: D1Database, targetDate: string): Prom
   const result = await db
     .prepare(
       `SELECT entity.id, entity.canonical_key, entity.canonical_title, entity.canonical_url,
-              entity.aliases_json, entity.last_seen_date, feedback.feedback,
-              (SELECT item.summary FROM brief_items AS item
-               WHERE item.entity_id = entity.id AND item.brief_date < ?
-               ORDER BY item.brief_date DESC LIMIT 1) AS previous_summary
+              entity.aliases_json, previous.brief_date AS last_seen_date,
+              previous.summary AS previous_summary, feedback.feedback
        FROM entities AS entity
+       JOIN brief_items AS previous
+         ON previous.entity_id = entity.id
+        AND previous.brief_date = (
+          SELECT MAX(item.brief_date) FROM brief_items AS item
+          WHERE item.entity_id = entity.id AND item.brief_date < ?
+        )
        LEFT JOIN entity_feedback AS feedback ON feedback.entity_id = entity.id
        WHERE entity.canonical_key NOT LIKE 'event:%'
-          OR entity.last_seen_date >= date(?, '-14 day')
-       ORDER BY entity.last_seen_date DESC LIMIT 500`,
+          OR previous.brief_date >= date(?, '-14 day')
+       ORDER BY previous.brief_date DESC LIMIT 500`,
     )
     .bind(targetDate, targetDate)
     .all<{
@@ -314,6 +332,80 @@ export async function getFeedbackPreferences(db: D1Database): Promise<Map<string
     )
     .all<{ canonical_key: string; feedback: FeedbackValue }>();
   return new Map(result.results.map((row) => [row.canonical_key, row.feedback]));
+}
+
+export async function getBriefRegeneration(db: D1Database, date: string): Promise<BriefRegenerationRow | null> {
+  return db.prepare(
+    `SELECT job_id, brief_date, status, requested_user_id, attempt_count,
+            error_code, created_at, updated_at, finished_at
+     FROM brief_regenerations WHERE brief_date = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+  ).bind(date).first<BriefRegenerationRow>();
+}
+
+export async function queueBriefRegeneration(
+  db: D1Database,
+  date: string,
+  jobId: string,
+  requestedUserId: string,
+  now: string,
+): Promise<{ row: BriefRegenerationRow; created: boolean }> {
+  const result = await db.prepare(
+    `INSERT OR IGNORE INTO brief_regenerations (
+       job_id, brief_date, status, requested_user_id, created_at, updated_at
+     ) VALUES (?, ?, 'queued', ?, ?, ?)`,
+  ).bind(jobId, date, requestedUserId, now, now).run();
+  const row = result.meta.changes > 0
+    ? await db.prepare(
+      `SELECT job_id, brief_date, status, requested_user_id, attempt_count,
+              error_code, created_at, updated_at, finished_at
+       FROM brief_regenerations WHERE job_id = ?`,
+    ).bind(jobId).first<BriefRegenerationRow>()
+    : await db.prepare(
+      `SELECT job_id, brief_date, status, requested_user_id, attempt_count,
+              error_code, created_at, updated_at, finished_at
+       FROM brief_regenerations
+       WHERE brief_date = ? AND status IN ('queued', 'processing')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(date).first<BriefRegenerationRow>();
+  if (!row) throw new Error("BRIEF_REGENERATION_CREATE_FAILED");
+  return { row, created: result.meta.changes > 0 };
+}
+
+export async function claimBriefRegeneration(
+  db: D1Database,
+  date: string,
+  jobId: string,
+  now: string,
+  recoverProcessing = false,
+): Promise<BriefRegenerationRow | null> {
+  const result = await db.prepare(
+    `UPDATE brief_regenerations
+     SET status = 'processing', attempt_count = attempt_count + 1, error_code = NULL, updated_at = ?
+     WHERE job_id = ? AND brief_date = ?
+       AND (status = 'queued' OR (status = 'processing' AND ? = 1))`,
+  ).bind(now, jobId, date, recoverProcessing ? 1 : 0).run();
+  if (result.meta.changes === 0) return null;
+  return db.prepare(
+    `SELECT job_id, brief_date, status, requested_user_id, attempt_count,
+            error_code, created_at, updated_at, finished_at
+     FROM brief_regenerations WHERE job_id = ?`,
+  ).bind(jobId).first<BriefRegenerationRow>();
+}
+
+export async function finishBriefRegeneration(
+  db: D1Database,
+  date: string,
+  jobId: string,
+  status: "succeeded" | "failed",
+  errorCode: string | null,
+  now: string,
+): Promise<boolean> {
+  const result = await db.prepare(
+    `UPDATE brief_regenerations
+     SET status = ?, error_code = ?, updated_at = ?, finished_at = ?
+     WHERE job_id = ? AND brief_date = ? AND status IN ('queued', 'processing')`,
+  ).bind(status, errorCode, now, now, jobId, date).run();
+  return result.meta.changes > 0;
 }
 
 export async function getEntityFeedback(db: D1Database, entityIds: readonly string[]): Promise<FeedbackMap> {
@@ -361,6 +453,7 @@ export async function removeAccountData(db: D1Database, userId: string): Promise
   await db.batch([
     db.prepare("DELETE FROM feedback_allowlist WHERE user_id = ?").bind(userId),
     db.prepare("UPDATE entity_feedback SET updated_by_user_id = NULL WHERE updated_by_user_id = ?").bind(userId),
+    db.prepare("UPDATE brief_regenerations SET requested_user_id = NULL WHERE requested_user_id = ?").bind(userId),
   ]);
 }
 
@@ -434,7 +527,9 @@ export async function replaceBrief(db: D1Database, draft: BriefDraft): Promise<v
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(canonical_key) DO UPDATE SET
              canonical_title = excluded.canonical_title, canonical_url = excluded.canonical_url,
-             aliases_json = excluded.aliases_json, last_seen_date = excluded.last_seen_date,
+             aliases_json = excluded.aliases_json,
+             first_seen_date = MIN(entities.first_seen_date, excluded.first_seen_date),
+             last_seen_date = MAX(entities.last_seen_date, excluded.last_seen_date),
              updated_at = excluded.updated_at`,
         )
         .bind(

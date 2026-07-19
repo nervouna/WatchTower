@@ -19,6 +19,7 @@ import {
   retryExplorationJob,
   type ExplorationJob,
 } from "./exploration/jobs";
+import { processBriefRegenerationJob, type BriefRegenerationJob } from "./regeneration/jobs";
 
 export function isTerminalQueueFailure(error: unknown, attempts: number): boolean {
   return attempts >= 3 ||
@@ -92,8 +93,9 @@ export default {
           if (job.kind === "brief-push-fanout") await processPushFanout(env, job, new Date(), message.attempts > 1);
           else await processPushDelivery(env, job, new Date(), message.attempts > 1);
         } else {
-          const job = message.body as BriefAudioJob | BriefCoverJob;
-          if (job.kind === "brief-cover") await processBriefCoverJob(env, job, new Date(), message.attempts > 1);
+          const job = message.body as BriefAudioJob | BriefCoverJob | BriefRegenerationJob;
+          if (job.kind === "brief-regeneration") await processBriefRegenerationJob(env, job, new Date(), message.attempts > 1);
+          else if (job.kind === "brief-cover") await processBriefCoverJob(env, job, new Date(), message.attempts > 1);
           else await processBriefAudioJob(env, job, new Date(), message.attempts > 1);
         }
         message.ack();
@@ -110,4 +112,4 @@ export default {
       }
     }
   },
-} satisfies ExportedHandler<Env, BriefAudioJob | BriefCoverJob | BriefPushJob | ExplorationJob>;
+} satisfies ExportedHandler<Env, BriefAudioJob | BriefCoverJob | BriefPushJob | ExplorationJob | BriefRegenerationJob>;

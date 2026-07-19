@@ -35,6 +35,7 @@ export interface PipelineDependencies {
   extract: (apiKey: string, candidates: readonly SearchCandidate[]) => Promise<ExtractCandidatesResult>;
   generate: (
     apiKey: string,
+    targetDate: string,
     candidates: readonly StoredCandidate[],
     entities: readonly EntityCatalogEntry[],
   ) => Promise<GeneratedBriefResult>;
@@ -160,7 +161,7 @@ function canonicalCandidate(candidates: readonly StoredCandidate[]): StoredCandi
   return first;
 }
 
-function buildBriefDraft(
+export function buildBriefDraft(
   generated: GeneratedBrief,
   candidates: readonly StoredCandidate[],
   entities: readonly EntityCatalogEntry[],
@@ -168,6 +169,7 @@ function buildBriefDraft(
   status: BriefStatus,
   missingSources: SourceKind[],
   generatedAt: string,
+  publishAt = `${targetDate}T00:00:00.000Z`,
 ): BriefDraft {
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const entityById = new Map(entities.map((entity) => [entity.id, entity]));
@@ -233,13 +235,13 @@ function buildBriefDraft(
   return {
     date: targetDate,
     status,
-    publishAt: `${targetDate}T00:00:00.000Z`,
+    publishAt,
     generatedAt,
     headline: generated.headline_zh,
     intro: generated.intro_zh,
     missingSources,
     model: "deepseek-v4-flash",
-    promptVersion: "v2-feedback",
+    promptVersion: "v3-daily-date",
     items,
   };
 }
@@ -306,7 +308,7 @@ export async function runPipelineStage(
 
   try {
     const entities = await getEntityCatalog(env.DB, invocation.targetDate);
-    const generated = await dependencies.generate(env.DEEPSEEK_API_KEY, candidates, entities);
+    const generated = await dependencies.generate(env.DEEPSEEK_API_KEY, invocation.targetDate, candidates, entities);
     if (generated.brief.items.length === 0) throw new Error("EMPTY_GENERATED_BRIEF");
     const status = desiredStatus;
     await replaceBrief(

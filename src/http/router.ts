@@ -5,17 +5,22 @@ import {
   getBrief,
   getEntityFeedback,
   getLatestBrief,
+  getCandidates,
+  getBriefRegeneration,
   listBriefs,
   removeEntityFeedback,
   setEntityFeedback,
   isFeedbackAllowed,
   removeAccountData,
+  queueBriefRegeneration,
+  finishBriefRegeneration,
 } from "../storage/repository";
 import { enqueueBriefAudio } from "../audio/jobs";
 import { enqueueBriefCover } from "../cover/jobs";
 import { handlePushSubscriptionRequest } from "../push/subscriptions";
 import { authenticate, AuthError, type AuthUser } from "../auth/auth0";
 import { explorationEnabled, handleExplorationRequest } from "../exploration/http";
+import type { BriefRegenerationJob } from "../regeneration/jobs";
 
 const API_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
 function audioEnabled(value: unknown): boolean { return value === "true"; }
@@ -144,6 +149,61 @@ async function handleCoverRetryRequest(request: Request, env: AuthRuntimeEnv & P
   return protectedResponse({ briefDate: date, status });
 }
 
+async function handleBriefRegenerationRequest(
+  request: Request,
+  env: AuthRuntimeEnv & Pick<Env, "BRIEF_AUDIO_QUEUE">,
+  now: Date,
+): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "POST") {
+    return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 GET 和 POST。", 405, { Allow: "GET, POST" });
+  }
+  const user = await requireAllowedUser(request, env);
+  if (user instanceof Response) return user;
+  const match = /^\/api\/briefs\/([^/]+)\/regeneration$/u.exec(new URL(request.url).pathname);
+  const date = match?.[1] ?? "";
+  if (!isValidUtcDate(date)) return protectedError("INVALID_DATE", "日期必须是有效的 YYYY-MM-DD UTC 日期。", 400);
+
+  if (request.method === "GET") {
+    const row = await getBriefRegeneration(env.DB, date);
+    return row
+      ? protectedResponse({
+        briefDate: row.brief_date,
+        jobId: row.job_id,
+        status: row.status,
+        attemptCount: row.attempt_count,
+        errorCode: row.error_code,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        finishedAt: row.finished_at,
+      })
+      : protectedError("BRIEF_REGENERATION_NOT_FOUND", "未找到该日期的重生成任务。", 404);
+  }
+
+  if (!(await getBrief(env.DB, date, now.toISOString()))) {
+    return protectedError("BRIEF_NOT_FOUND", "未找到已发布简报。", 404);
+  }
+  if ((await getCandidates(env.DB, date)).length === 0) {
+    return protectedError("BRIEF_REGENERATION_UNAVAILABLE", "该日期没有可重放的存量候选证据。", 409);
+  }
+
+  const jobId = crypto.randomUUID();
+  const queued = await queueBriefRegeneration(env.DB, date, jobId, user.id, now.toISOString());
+  if (queued.created) {
+    try {
+      await env.BRIEF_AUDIO_QUEUE.send({ kind: "brief-regeneration", briefDate: date, jobId } satisfies BriefRegenerationJob);
+    } catch {
+      await finishBriefRegeneration(env.DB, date, jobId, "failed", "BRIEF_REGENERATION_QUEUE_FAILED", new Date().toISOString());
+      return protectedError("BRIEF_REGENERATION_QUEUE_FAILED", "重生成任务暂时无法排队，请稍后重试。", 503);
+    }
+  }
+  return protectedResponse({
+    briefDate: queued.row.brief_date,
+    jobId: queued.row.job_id,
+    status: queued.row.status,
+    pollAfterSeconds: 3,
+  }, 202);
+}
+
 async function deleteAuth0User(env: AuthRuntimeEnv, userId: string): Promise<"deleted" | "not-found" | "failed"> {
   try {
     const tokenResponse = await fetch(`https://${env.AUTH0_TENANT_DOMAIN}/oauth/token`, {
@@ -186,7 +246,7 @@ async function handleAuthRequest(request: Request, env: AuthRuntimeEnv): Promise
   if (path === "/api/auth/me") {
     if (request.method !== "GET") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 GET。", 405, { Allow: "GET" });
     const allowed = await isFeedbackAllowed(env.DB, user.id);
-    return protectedResponse({ user, capabilities: { feedback: allowed, audioRetry: allowed } });
+    return protectedResponse({ user, capabilities: { feedback: allowed, audioRetry: allowed, briefRegenerate: allowed } });
   }
   if (path === "/api/auth/account") {
     if (request.method !== "DELETE") return protectedError("METHOD_NOT_ALLOWED", "此接口仅支持 DELETE。", 405, { Allow: "DELETE" });
@@ -259,6 +319,7 @@ export async function handleRequest(
   }
   if (/^\/api\/briefs\/[^/]+\/audio\/retry$/u.test(url.pathname)) return handleAudioRetryRequest(request, env, now);
   if (/^\/api\/briefs\/[^/]+\/cover\/retry$/u.test(url.pathname)) return handleCoverRetryRequest(request, env, now);
+  if (/^\/api\/briefs\/[^/]+\/regeneration$/u.test(url.pathname)) return handleBriefRegenerationRequest(request, env, now);
 
   const coverMatch = /^\/api\/briefs\/([^/]+)\/cover$/u.exec(url.pathname);
   if (coverMatch?.[1]) {

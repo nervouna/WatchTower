@@ -55,7 +55,7 @@ function dependencies(
       evidence: new Map(candidates.map((entry) => [entry.platformUrl, entry.snippet])),
       credits: candidates.length,
     })),
-    generate: vi.fn(async (_key: string, candidates: readonly import("../src/domain/types").StoredCandidate[]) => ({
+    generate: vi.fn(async (_key: string, _targetDate: string, candidates: readonly import("../src/domain/types").StoredCandidate[]) => ({
       brief: { ...generated, items: [{ ...generated.items[0]!, candidate_ids: candidates.map((entry) => entry.id) }] },
       repaired: false,
       totalTokens: 100,
@@ -134,7 +134,8 @@ describe("scheduled pipeline", () => {
       deps,
     );
     expect(result).toMatchObject({ outcome: "published", status: "partial", successfulSources: 0 });
-    expect(vi.mocked(deps.generate).mock.calls[0]?.[1]).toEqual(
+    expect(vi.mocked(deps.generate).mock.calls[0]?.[1]).toBe("2026-07-16");
+    expect(vi.mocked(deps.generate).mock.calls[0]?.[2]).toEqual(
       expect.arrayContaining([expect.objectContaining({ targetDate: "2026-07-16" })]),
     );
   });

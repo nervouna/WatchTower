@@ -16,6 +16,7 @@ export type GeneratedBriefValidation =
   | { ok: false; errors: string[] };
 
 const URL_PATTERN = /(?:https?:\/\/|www\.)/iu;
+const NON_DAILY_HEADER_PATTERN = /(?:本周|周报)/u;
 
 function codePoints(value: string): number {
   return Array.from(value).length;
@@ -62,6 +63,12 @@ export function validateGeneratedBrief(value: unknown, context: ValidationContex
   if (!validLength(value.intro_zh, 40, 180)) {
     errors.add("FIELD_LENGTH");
     errors.add("FIELD_LENGTH_INTRO");
+  }
+  if (
+    (typeof value.headline_zh === "string" && NON_DAILY_HEADER_PATTERN.test(value.headline_zh)) ||
+    (typeof value.intro_zh === "string" && NON_DAILY_HEADER_PATTERN.test(value.intro_zh))
+  ) {
+    errors.add("NON_DAILY_HEADER");
   }
   if (value.items.length === 0) errors.add("EMPTY_ITEMS");
   if (value.items.length > 20 || value.items.some((item) => !validateItemShape(item))) errors.add("INVALID_STRUCTURE");

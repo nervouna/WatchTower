@@ -41,9 +41,11 @@ describe("generateBrief", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }], usage: { total_tokens: 100 } }),
     );
-    const result = await generateBrief("secret", [candidate], [], { fetcher });
+    const result = await generateBrief("secret", "2026-07-16", [candidate], [], { fetcher });
     expect(result.brief).toEqual(valid);
-    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as {
+      messages: Array<{ content: string }>;
+    } & Record<string, unknown>;
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
       thinking: { type: "disabled" },
@@ -54,6 +56,10 @@ describe("generateBrief", () => {
     });
     expect(JSON.stringify(body)).toContain("JSON");
     expect(JSON.stringify(body)).toContain("summary_zh: 60-240");
+    expect(JSON.parse(body.messages[1]!.content)).toMatchObject({ brief_date: "2026-07-16" });
+    expect(JSON.stringify(body)).toContain("Create the Chinese daily technology brief for the supplied brief_date.");
+    expect(JSON.stringify(body)).not.toContain("intro_zh must begin");
+    expect(JSON.stringify(body)).not.toContain("不得使用");
   });
 
   it("makes exactly one repair request with stable validation errors", async () => {
@@ -62,12 +68,16 @@ describe("generateBrief", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(invalid) } }] }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
-    const result = await generateBrief("secret", [candidate], [], { fetcher });
+    const result = await generateBrief("secret", "2026-07-16", [candidate], [], { fetcher });
     expect(result.repaired).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("UNKNOWN_CANDIDATE");
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("Allowed candidate IDs: c1");
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("summary_zh target: 120-180");
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain(
+      "Rewrite headline_zh and intro_zh as a single-day daily technology brief for brief_date 2026-07-16.",
+    );
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).not.toContain("本周|周报");
   });
 
   it("repairs an empty brief exactly once", async () => {
@@ -76,7 +86,7 @@ describe("generateBrief", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(empty) } }] }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
-    const result = await generateBrief("secret", [candidate], [], { fetcher });
+    const result = await generateBrief("secret", "2026-07-16", [candidate], [], { fetcher });
     expect(result.repaired).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("EMPTY_ITEMS");
@@ -87,7 +97,7 @@ describe("generateBrief", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json({ choices: [{ message: { content: JSON.stringify(empty) } }] }));
-    await expect(generateBrief("secret", [candidate], [], { fetcher })).rejects.toThrow(
+    await expect(generateBrief("secret", "2026-07-16", [candidate], [], { fetcher })).rejects.toThrow(
       "DEEPSEEK_VALIDATION_FAILED:EMPTY_ITEMS",
     );
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -97,7 +107,7 @@ describe("generateBrief", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json({ choices: [{ message: { content: "not json" } }] }));
-    await expect(generateBrief("secret", [candidate], [], { fetcher })).rejects.toThrow("DEEPSEEK_VALIDATION_FAILED");
+    await expect(generateBrief("secret", "2026-07-16", [candidate], [], { fetcher })).rejects.toThrow("DEEPSEEK_VALIDATION_FAILED");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
@@ -126,10 +136,37 @@ describe("generateBrief", () => {
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(invalid) } }] }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
 
-    await generateBrief("secret", [candidate], [excludedEntity], { fetcher });
+    await generateBrief("secret", "2026-07-16", [candidate], [excludedEntity], { fetcher });
     const firstBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as { messages: Array<{ content: string }> };
     expect(firstBody.messages[1]?.content).toContain('"feedback":"irrelevant"');
     expect(firstBody.messages[1]?.content).toContain("Never include this entity");
     expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("FEEDBACK_EXCLUDED_ENTITY");
+  });
+
+  it("repairs a weekly header exactly once with a positive daily instruction", async () => {
+    const weekly = { ...valid, headline_zh: "开发者周报：本周重点更新" };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(weekly) } }] }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(valid) } }] }));
+
+    const result = await generateBrief("secret", "2026-07-16", [candidate], [], { fetcher });
+
+    expect(result.repaired).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("NON_DAILY_HEADER");
+    expect(String(fetcher.mock.calls[1]?.[1]?.body)).toContain("single-day daily technology brief for brief_date 2026-07-16");
+  });
+
+  it("rejects a weekly header that remains after the single repair", async () => {
+    const weekly = { ...valid, intro_zh: "本周科技动态集中在开发工具与新产品发布，以下内容均来自当前候选证据并经过聚合整理，适合开发者与产品团队快速阅读。" };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({ choices: [{ message: { content: JSON.stringify(weekly) } }] }),
+    );
+
+    await expect(generateBrief("secret", "2026-07-16", [candidate], [], { fetcher })).rejects.toThrow(
+      "DEEPSEEK_VALIDATION_FAILED:NON_DAILY_HEADER",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

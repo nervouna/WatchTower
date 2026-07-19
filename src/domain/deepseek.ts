@@ -62,12 +62,14 @@ All lengths are Unicode code points, including punctuation:
 Aim for 120-180 code points in every summary_zh and 50-90 in every why_it_matters_zh. These are deliberate multi-sentence Chinese paragraphs, not short taglines.
 For update_kind "continuing", existing_entity_id and non-empty material_change_zh are required. For "new", both must be null.
 Return between 1 and 20 items. Each candidate ID may appear in exactly one item. If every source has at least 3 candidates, include every source in at least 3 aggregated items; a cross-source item counts for each represented source.
-Never output or invent URLs. Merge only the same real product, repository, campaign, or concrete event. Do not merge items merely because they share a broad category. Use only supplied evidence. Rank by current relevance. Do not pad weak or duplicate items.`;
+Never output or invent URLs. Merge only the same real product, repository, campaign, or concrete event. Do not merge items merely because they share a broad category. Use only supplied evidence. Rank by current relevance. Do not pad weak or duplicate items.
+Create the Chinese daily technology brief for the supplied brief_date.`;
 }
 
-function buildCatalog(candidates: readonly StoredCandidate[], entities: readonly EntityCatalogEntry[]): string {
+function buildCatalog(targetDate: string, candidates: readonly StoredCandidate[], entities: readonly EntityCatalogEntry[]): string {
   const feedbackByKey = new Map(entities.map((entity) => [entity.canonicalKey, entity.feedback]));
   return JSON.stringify({
+    brief_date: targetDate,
     candidate_catalog: candidates.map((candidate) => ({
       id: candidate.id,
       source: candidate.source,
@@ -126,12 +128,13 @@ async function complete(
 
 export async function generateBrief(
   apiKey: string,
+  targetDate: string,
   candidates: readonly StoredCandidate[],
   entities: readonly EntityCatalogEntry[],
   options: DeepSeekOptions = {},
 ): Promise<GeneratedBriefResult> {
   const system = buildSystemPrompt();
-  const user = buildCatalog(candidates, entities);
+  const user = buildCatalog(targetDate, candidates, entities);
   const catalog = new Map(candidates.map((candidate) => [candidate.id, { source: candidate.source }]));
   const entityIds = new Set(entities.map((entity) => entity.id));
   const excludedEntityIds = new Set(entities.filter((entity) => entity.feedback === "irrelevant").map((entity) => entity.id));
@@ -156,6 +159,7 @@ export async function generateBrief(
           `Repair the response and return the complete JSON object only. Validation error codes: ${firstValidation.errors.join(",")}. ` +
           `Allowed candidate IDs: ${candidates.map((candidate) => candidate.id).join(",")}. ` +
           `Allowed entity IDs: ${entities.map((entity) => entity.id).join(",") || "none"}. ` +
+          `Rewrite headline_zh and intro_zh as a single-day daily technology brief for brief_date ${targetDate}. ` +
           "Delete unknown IDs and never invent IDs. Use each candidate at most once. " +
           "Safe length targets in Unicode code points: headline_zh target: 12-40; intro_zh target: 60-140; " +
           "summary_zh target: 120-180; why_it_matters_zh target: 50-90; title_zh target: 6-50. " +
