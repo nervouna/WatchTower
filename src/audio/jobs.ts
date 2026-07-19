@@ -4,6 +4,7 @@ import { parseWav } from "./wav";
 import { claimBriefAudio, failBriefAudio, getBriefAudio, queueBriefAudio, readyBriefAudio, saveBriefAudioScript } from "../storage/repository";
 import { getBrief } from "../storage/repository";
 import type { BriefPayload, NarrationScript } from "../domain/types";
+import { ExternalApiError } from "../ingestion/http-client";
 
 export interface BriefAudioJob { kind?: "brief-audio"; briefDate: string; contentHash: string }
 export const AUDIO_MODEL = "mimo-v2.5-tts";
@@ -55,9 +56,9 @@ function parseStoredScript(value: string): NarrationScript {
   return JSON.parse(value) as NarrationScript;
 }
 
-export async function processBriefAudioJob(env: Pick<Env, "DB" | "BRIEF_AUDIO" | "DEEPSEEK_API_KEY" | "MIMO_API_KEY">, job: BriefAudioJob, now = new Date(), recoverProcessing = false): Promise<"ready" | "ignored"> {
+export async function processBriefAudioJob(env: Pick<Env, "DB" | "BRIEF_AUDIO" | "DEEPSEEK_API_KEY" | "MIMO_API_KEY">, job: BriefAudioJob, now = new Date(), queueDeliveryAttempt = 1): Promise<"ready" | "ignored"> {
   const started = Date.now();
-  const claimed = await claimBriefAudio(env.DB, job.briefDate, job.contentHash, now.toISOString(), recoverProcessing);
+  const claimed = await claimBriefAudio(env.DB, job.briefDate, job.contentHash, now.toISOString(), queueDeliveryAttempt > 1);
   if (!claimed) return "ignored";
   try {
     const brief = await getBrief(env.DB, job.briefDate, now.toISOString());
@@ -89,12 +90,26 @@ export async function processBriefAudioJob(env: Pick<Env, "DB" | "BRIEF_AUDIO" |
     const generatedAt = new Date().toISOString();
     await readyBriefAudio(env.DB, job.briefDate, job.contentHash, objectKey, result.durationSeconds, generatedAt);
     if (previousObject && previousObject !== objectKey) await env.BRIEF_AUDIO.delete(previousObject);
-    console.log(JSON.stringify({ event: "brief_audio_ready", briefDate: job.briefDate, status: "ready", attempt: claimed.attempt_count, durationMs: Date.now() - started, model: AUDIO_MODEL }));
+    console.log(JSON.stringify({ event: "brief_audio_ready", briefDate: job.briefDate, status: "ready", attempt: claimed.attempt_count, queueDeliveryAttempt, durationMs: Date.now() - started, model: AUDIO_MODEL }));
     return "ready";
   } catch (error) {
     const errorCode = stableError(error);
     await failBriefAudio(env.DB, job.briefDate, job.contentHash, errorCode, new Date().toISOString());
-    console.error(JSON.stringify({ event: "brief_audio_failed", briefDate: job.briefDate, status: "failed", attempt: claimed.attempt_count, durationMs: Date.now() - started, model: AUDIO_MODEL, errorCode }));
+    console.error(JSON.stringify({
+      event: "brief_audio_failed",
+      briefDate: job.briefDate,
+      status: "failed",
+      attempt: claimed.attempt_count,
+      queueDeliveryAttempt,
+      durationMs: Date.now() - started,
+      model: AUDIO_MODEL,
+      errorCode,
+      ...(error instanceof ExternalApiError ? {
+        providerAttempts: error.attempts,
+        providerStatus: error.status,
+        providerRequestId: error.requestId,
+      } : {}),
+    }));
     throw error;
   }
 }

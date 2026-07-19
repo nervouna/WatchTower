@@ -226,6 +226,27 @@ describe("public API", () => {
     expect(await (await handleRequest(request(), env, now)).json()).toMatchObject({ status: "already-pending" });
   });
 
+  it("requeues a stale protected audio retry while preserving diagnostics", async () => {
+    await replaceBrief(env.DB, draft());
+    const send = vi.fn(async () => undefined);
+    const retryEnv = { ...env, BRIEF_AUDIO_QUEUE: { send } } as unknown as Env;
+    const request = () => new Request("https://example.com/api/briefs/2026-07-16/audio/retry", { method: "POST", headers: authHeader });
+    await handleRequest(request(), retryEnv, now);
+    const script = JSON.stringify({ opening_zh: "开场", items: [{ entity_id: "id", text_zh: "正文" }], closing_zh: "结尾" });
+    await env.DB.prepare(
+      "UPDATE brief_audio SET status = 'processing', script_json = ?, attempt_count = 2, error_code = 'TIMEOUT', updated_at = ? WHERE brief_date = ?",
+    ).bind(script, "2026-07-16T00:39:00.000Z", "2026-07-16").run();
+
+    const response = await handleRequest(request(), retryEnv, now);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(await response.json()).toEqual({ briefDate: "2026-07-16", status: "queued" });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await env.DB.prepare("SELECT status, script_json, attempt_count, error_code FROM brief_audio WHERE brief_date = ?")
+      .bind("2026-07-16").first()).toEqual({ status: "pending", script_json: script, attempt_count: 2, error_code: null });
+  });
+
   it("protects and idempotently queues cover retry without public CORS", async () => {
     await replaceBrief(env.DB, draft());
     const unauthorized = await handleRequest(new Request("https://example.com/api/briefs/2026-07-16/cover/retry", { method: "POST" }), env, now);

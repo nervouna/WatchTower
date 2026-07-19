@@ -55,4 +55,31 @@ describe("MiMo speech synthesis", () => {
     const tooLong = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ choices: [{ message: { audio: { data: wavBase64(76) } } }] }));
     await expect(synthesizeSpeech("secret", "逐字稿", "id", 1, { fetcher: tooLong })).rejects.toThrow("MIMO_DURATION_OUT_OF_RANGE");
   });
+
+  it.each([
+    ["server failure", vi.fn<typeof fetch>().mockResolvedValue(new Response("unavailable", { status: 503 })), "HTTP_503"],
+    ["network failure", vi.fn<typeof fetch>().mockRejectedValue(new Error("network")), "NETWORK_ERROR"],
+  ])("leaves %s retries to the queue", async (_name, fetcher, code) => {
+    await expect(synthesizeSpeech("secret", "逐字稿", "id", 1, { fetcher, sleep: async () => undefined, maxAttempts: 3 }))
+      .rejects.toMatchObject({ code, attempts: 1 });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("uses one eight-minute provider attempt for timeouts", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn<typeof fetch>().mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        }, { once: true });
+      }));
+      const result = synthesizeSpeech("secret", "逐字稿", "id", 1, { fetcher, maxAttempts: 3 });
+      const rejected = expect(result).rejects.toMatchObject({ code: "TIMEOUT", attempts: 1 });
+      await vi.advanceTimersByTimeAsync(8 * 60_000);
+      await rejected;
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -25,6 +25,20 @@ describe("fetchJsonWithRetry", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
+  it("supports a caller-defined attempt limit while defaulting to three", async () => {
+    const defaultFetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error("network"));
+    await expect(
+      fetchJsonWithRetry("https://example.com", {}, { fetcher: defaultFetcher, sleep: async () => undefined }),
+    ).rejects.toMatchObject({ attempts: 3 });
+
+    const limitedFetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("unavailable", { status: 503 }));
+    await expect(
+      fetchJsonWithRetry("https://example.com", {}, { fetcher: limitedFetcher, maxAttempts: 1 }),
+    ).rejects.toMatchObject({ code: "HTTP_503", attempts: 1, status: 503 });
+    expect(defaultFetcher).toHaveBeenCalledTimes(3);
+    expect(limitedFetcher).toHaveBeenCalledOnce();
+  });
+
   it("does not retry non-retriable 4xx responses", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("unauthorized", { status: 401 }));
     await expect(fetchJsonWithRetry("https://example.com", {}, { fetcher })).rejects.toBeInstanceOf(ExternalApiError);

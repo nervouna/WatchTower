@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   beginRun,
@@ -36,6 +36,7 @@ import {
   type ExplorationJob,
 } from "../src/exploration/repository";
 import type { StoredCandidate } from "../src/domain/types";
+import { briefAudioContentHash, processBriefAudioJob } from "../src/audio/jobs";
 
 function storedCandidate(id: string, targetDate = "2026-07-16"): StoredCandidate {
   return {
@@ -161,6 +162,67 @@ describe("D1 repository", () => {
     expect((await getBriefAudio(env.DB, "2026-07-16"))?.prompt_version).toBe("narration-v2-adaptive");
     expect((await getBrief(env.DB, "2026-07-16", "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({ status: "ready", durationSeconds: 180, transcript: "开场\n\n正文\n\n结尾" });
     expect((await getBriefAudio(env.DB, "2026-07-16"))?.object_key).toBe("briefs/a.wav");
+  });
+
+  it("requeues only audio processing records whose twenty-minute lease expired", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v3", "2026-07-16T01:00:00.000Z");
+    await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "2026-07-16T01:01:00.000Z");
+    const script = JSON.stringify({ opening_zh: "开场", items: [{ entity_id: "id", text_zh: "正文" }], closing_zh: "结尾" });
+    await saveBriefAudioScript(env.DB, "2026-07-16", "hash-a", script, "2026-07-16T01:01:00.000Z");
+
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v3", "2026-07-16T01:20:59.999Z")).toBe("already-pending");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v3", "2026-07-16T01:21:00.000Z")).toBe("queued");
+    expect(await getBriefAudio(env.DB, "2026-07-16")).toMatchObject({
+      status: "pending",
+      script_json: script,
+      attempt_count: 1,
+      error_code: null,
+      updated_at: "2026-07-16T01:21:00.000Z",
+    });
+  });
+
+  it("does not recover audio processing records with invalid timestamps", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v3", "2026-07-16T01:00:00.000Z");
+    await claimBriefAudio(env.DB, "2026-07-16", "hash-a", "invalid-timestamp");
+    expect(await queueBriefAudio(env.DB, "2026-07-16", "hash-a", "narration-v3", "2026-07-16T02:00:00.000Z")).toBe("already-pending");
+  });
+
+  it("ends the third queue delivery as a public failed audio state with safe provider diagnostics", async () => {
+    await replaceBrief(env.DB, briefDraft("2026-07-16"));
+    const brief = (await getBrief(env.DB, "2026-07-16", "2026-07-16T01:00:00.000Z"))!;
+    const contentHash = await briefAudioContentHash(brief);
+    await queueBriefAudio(env.DB, brief.date, contentHash, "narration-v3", "2026-07-16T01:00:00.000Z");
+    await saveBriefAudioScript(env.DB, brief.date, contentHash, JSON.stringify({
+      opening_zh: "开场",
+      items: [{ entity_id: brief.items[0]!.entityId, text_zh: "正文" }],
+      closing_zh: "结尾",
+    }), "2026-07-16T01:00:00.000Z");
+    const fetcher = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      for (let delivery = 1; delivery <= 3; delivery += 1) {
+        await expect(processBriefAudioJob(env, { briefDate: brief.date, contentHash }, new Date(`2026-07-16T01:0${String(delivery)}:00.000Z`), delivery))
+          .rejects.toMatchObject({ code: "NETWORK_ERROR", attempts: 1 });
+      }
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(await getBriefAudio(env.DB, brief.date)).toMatchObject({ status: "failed", attempt_count: 3, error_code: "NETWORK_ERROR" });
+      expect((await getBrief(env.DB, brief.date, "2026-07-16T02:00:00.000Z"))?.audio).toMatchObject({ status: "failed" });
+      const diagnostic = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as Record<string, unknown>;
+      expect(diagnostic).toMatchObject({
+        event: "brief_audio_failed",
+        errorCode: "NETWORK_ERROR",
+        providerAttempts: 1,
+        providerStatus: null,
+        providerRequestId: null,
+        queueDeliveryAttempt: 3,
+      });
+      expect(JSON.stringify(diagnostic)).not.toContain("正文");
+    } finally {
+      fetcher.mockRestore();
+      log.mockRestore();
+    }
   });
 
   it("hydrates cover states and resumes one fal request idempotently", async () => {

@@ -757,10 +757,23 @@ export async function getBriefAudio(db: D1Database, date: string): Promise<Brief
   return db.prepare("SELECT * FROM brief_audio WHERE brief_date = ?").bind(date).first<BriefAudioRow>();
 }
 
+const AUDIO_PROCESSING_LEASE_MS = 20 * 60_000;
+
 export async function queueBriefAudio(db: D1Database, date: string, contentHash: string, promptVersion: string, now: string): Promise<"queued" | "already-pending" | "already-ready"> {
   const current = await getBriefAudio(db, date);
   if (current?.content_hash === contentHash && current.status === "ready") return "already-ready";
-  if (current?.content_hash === contentHash && (current.status === "pending" || current.status === "processing")) return "already-pending";
+  if (current?.content_hash === contentHash && current.status === "pending") return "already-pending";
+  if (current?.content_hash === contentHash && current.status === "processing") {
+    const nowMs = Date.parse(now);
+    const updatedAtMs = Date.parse(current.updated_at);
+    const stale = Number.isFinite(nowMs) && Number.isFinite(updatedAtMs) && nowMs - updatedAtMs >= AUDIO_PROCESSING_LEASE_MS;
+    if (!stale) return "already-pending";
+    const recovered = await db.prepare(
+      `UPDATE brief_audio SET status = 'pending', error_code = NULL, updated_at = ?
+       WHERE brief_date = ? AND content_hash = ? AND status = 'processing' AND updated_at = ?`,
+    ).bind(now, date, contentHash, current.updated_at).run();
+    return recovered.meta.changes > 0 ? "queued" : "already-pending";
+  }
   await db.prepare(
     `INSERT INTO brief_audio (brief_date, content_hash, status, provider, model, voice, prompt_version, created_at, updated_at)
      VALUES (?, ?, 'pending', 'xiaomi-mimo', 'mimo-v2.5-tts', '冰糖', ?, ?, ?)

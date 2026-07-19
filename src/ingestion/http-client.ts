@@ -3,6 +3,7 @@ export interface RetryOptions {
   sleep?: (milliseconds: number) => Promise<void>;
   random?: () => number;
   timeoutMs?: number;
+  maxAttempts?: number;
 }
 
 export interface ExternalJsonResult<T> {
@@ -49,11 +50,15 @@ export async function fetchJsonWithRetry<T>(
   const fetcher = options.fetcher ?? fetch;
   const sleep = options.sleep ?? defaultSleep;
   const random = options.random ?? Math.random;
+  const requestedAttempts = options.maxAttempts ?? 3;
+  const maxAttempts = Number.isFinite(requestedAttempts) && requestedAttempts >= 1
+    ? Math.floor(requestedAttempts)
+    : 3;
   const started = Date.now();
   let lastStatus: number | null = null;
   let lastRequestId: string | null = null;
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort("timeout");
@@ -68,12 +73,12 @@ export async function fetchJsonWithRetry<T>(
         return { data: data as T, requestId: lastRequestId, attempts: attempt, durationMs: Date.now() - started };
       }
       const retriable = response.status === 429 || response.status >= 500;
-      if (!retriable || attempt === 3) {
+      if (!retriable || attempt === maxAttempts) {
         throw new ExternalApiError(`HTTP_${String(response.status)}`, attempt, response.status, lastRequestId);
       }
     } catch (error) {
       if (error instanceof ExternalApiError) throw error;
-      if (attempt === 3) {
+      if (attempt === maxAttempts) {
         const code = controller.signal.aborted ? "TIMEOUT" : "NETWORK_ERROR";
         throw new ExternalApiError(code, attempt, lastStatus, lastRequestId);
       }
@@ -82,5 +87,5 @@ export async function fetchJsonWithRetry<T>(
     }
     await sleep(retryDelay(response, attempt, random));
   }
-  throw new ExternalApiError("NETWORK_ERROR", 3, lastStatus, lastRequestId);
+  throw new ExternalApiError("NETWORK_ERROR", maxAttempts, lastStatus, lastRequestId);
 }

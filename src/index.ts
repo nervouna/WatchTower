@@ -96,7 +96,7 @@ export default {
           const job = message.body as BriefAudioJob | BriefCoverJob | BriefRegenerationJob;
           if (job.kind === "brief-regeneration") await processBriefRegenerationJob(env, job, new Date(), message.attempts > 1);
           else if (job.kind === "brief-cover") await processBriefCoverJob(env, job, new Date(), message.attempts > 1);
-          else await processBriefAudioJob(env, job, new Date(), message.attempts > 1);
+          else await processBriefAudioJob(env, job, new Date(), message.attempts);
         }
         message.ack();
       } catch (error) {

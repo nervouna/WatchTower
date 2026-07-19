@@ -44,7 +44,7 @@ export async function synthesizeSpeech(apiKey: string, transcript: string, conte
       audio: { format: "wav", voice: "冰糖" },
       stream: false,
     }),
-  }, { ...options, timeoutMs: 12 * 60_000 });
+  }, { ...options, timeoutMs: 8 * 60_000, maxAttempts: 1 });
   const raw = decodeAudio(response.data);
   const parsed = parseWav(raw);
   const range = audioDurationRange(itemCount);
