@@ -84,7 +84,7 @@ cp .env.example .env
 
 Auth0 issuer、audience、tenant domain 和三个公开 client ID 配置在 `wrangler.jsonc`。这些值不是秘密；Apple private key 只保存在 Apple/Auth0 配置中，不进入仓库或 Worker。
 
-探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产环境已启用探索入口，`env.dev` 仍保持 `ITEM_EXPLORATION_ENABLED=false`。当前查询与 prompt 合约版本分别为 `exploration-v2-bounded` 和 `exploration-v2-contract`。
+探索功能复用 Tavily 与 DeepSeek 密钥。非秘密配置由 `wrangler.jsonc` 管理：`ITEM_EXPLORATION_ENABLED`、`ITEM_EXPLORATION_CACHE_TTL_HOURS`、`ITEM_EXPLORATION_DAILY_TAVILY_CREDITS` 和 `ITEM_EXPLORATION_CREDIT_RESERVATION`。生产环境已启用探索入口，`env.dev` 仍保持 `ITEM_EXPLORATION_ENABLED=false`。当前查询与 prompt 合约版本分别为 `exploration-v2-bounded` 和 `exploration-v3-chinese`。
 
 ### 3. 初始化本地数据库
 

@@ -29,8 +29,10 @@ describe("exploration synthesis", () => {
     expect(body.messages[0]?.content).toContain("untrusted quoted data");
     expect(body.messages[0]?.content).toContain("relatedProducts must be an array with 0 to 6 items");
     expect(body.messages[0]?.content).toContain("sourceIds must contain 1 to 6 unique allowed source IDs");
+    expect(body.messages[0]?.content).toContain("Write every natural-language value in Simplified Chinese");
+    expect(body.messages[0]?.content).toContain("Do not write English sentences");
     expect(body.messages[1]?.content).not.toContain("https://official.test/release");
-    expect(EXPLORATION_PROMPT_VERSION).toBe("exploration-v2-contract");
+    expect(EXPLORATION_PROMPT_VERSION).toBe("exploration-v3-chinese");
   });
 
   it("allows exactly one repair and rejects a second invalid response", async () => {

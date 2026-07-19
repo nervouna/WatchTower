@@ -73,7 +73,7 @@ describe("exploration jobs", () => {
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("api.deepseek.com");
     expect(await getExplorationRow(env.DB, job.entityId)).toMatchObject({
       status: "ready", evidence_json: null, tavily_credits: 8, deepseek_tokens: 21,
-      prompt_version: "exploration-v2-contract", query_version: "exploration-v2-bounded",
+      prompt_version: "exploration-v3-chinese", query_version: "exploration-v2-bounded",
     });
   });
 

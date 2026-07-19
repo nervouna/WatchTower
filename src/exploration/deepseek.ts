@@ -3,7 +3,7 @@ import { fetchJsonWithRetry, type RetryOptions } from "../ingestion/http-client"
 import { validateExplorationOutput } from "./validation";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
-export const EXPLORATION_PROMPT_VERSION = "exploration-v2-contract";
+export const EXPLORATION_PROMPT_VERSION = "exploration-v3-chinese";
 
 export class ExplorationSynthesisError extends Error {
   constructor(message: string, readonly tokens: number) { super(message); }
@@ -30,6 +30,7 @@ function parse(value: string): unknown {
 }
 
 const SYSTEM_PROMPT = `You produce a single structured Chinese research summary for WatchTower.
+Write every natural-language value in Simplified Chinese, including content derived from English evidence. Do not write English sentences or untranslated English descriptions. Keep an official product, company, organization, person, or technical proper name in its original form only when translating the name would make it inaccurate or unrecognizable.
 Return one JSON object only. The root must contain exactly overview, relatedProducts, perspectives, industry, and watchNext, with no missing or unknown keys.
 overview must be exactly {"text":"string","sourceIds":["source_01"]}; text must contain 40 to 800 Unicode characters.
 relatedProducts must be an array with 0 to 6 items. Each item must contain exactly name, relation, summary, and sourceIds. name and relation must contain 1 to 80 characters; summary must contain 20 to 400 characters.

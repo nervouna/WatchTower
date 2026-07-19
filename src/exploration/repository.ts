@@ -152,13 +152,13 @@ export async function claimExplorationTrigger(
   const inserted = await db.prepare(
     `INSERT OR IGNORE INTO item_explorations (
        entity_id, title, status, active_job_id, lease_expires_at, prompt_version, query_version, created_at, updated_at
-     ) VALUES (?, ?, 'queued', ?, ?, 'exploration-v2-contract', 'exploration-v2-bounded', ?, ?)`,
+     ) VALUES (?, ?, 'queued', ?, ?, 'exploration-v3-chinese', 'exploration-v2-bounded', ?, ?)`,
   ).bind(seed.entityId, seed.title, jobId, leaseExpiresAt, now, now).run();
   if (inserted.meta.changes > 0) return true;
   const claimed = await db.prepare(
     `UPDATE item_explorations
      SET title = ?, status = 'queued', active_job_id = ?, lease_expires_at = ?,
-         prompt_version = 'exploration-v2-contract', query_version = 'exploration-v2-bounded',
+         prompt_version = 'exploration-v3-chinese', query_version = 'exploration-v2-bounded',
          retry_at = NULL, last_error_code = NULL, updated_at = ?
      WHERE entity_id = ?
        AND (active_job_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= ?)
@@ -272,7 +272,7 @@ export async function recordExplorationSynthesisUsage(
 ): Promise<void> {
   if (tokens <= 0) return;
   await db.prepare(
-    `UPDATE item_explorations SET deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v2-contract',
+    `UPDATE item_explorations SET deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v3-chinese',
        updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
   ).bind(tokens, now, job.entityId, job.jobId).run();
 }
@@ -289,7 +289,7 @@ export async function readyExploration(
       `UPDATE item_explorations SET status = 'ready', quality = ?, content_json = ?,
          source_catalog_json = ?, evidence_json = NULL, generated_at = ?, expires_at = ?,
          active_job_id = NULL, lease_expires_at = NULL, retry_at = NULL, last_error_code = NULL,
-         deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v2-contract',
+         deepseek_tokens = deepseek_tokens + ?, prompt_version = 'exploration-v3-chinese',
          updated_at = ? WHERE entity_id = ? AND active_job_id = ?`,
     ).bind(result.quality, JSON.stringify(result.sections), JSON.stringify(result.sources), generatedAt,
       expiresAt, result.tokens, generatedAt, job.entityId, job.jobId),

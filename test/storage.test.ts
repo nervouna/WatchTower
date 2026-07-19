@@ -133,7 +133,7 @@ describe("D1 repository", () => {
     expect(savedEvidence(retried!)).toEqual(evidence);
     expect((await getExplorationRow(env.DB, entityId))?.attempt_count).toBe(2);
     expect(await getExplorationRow(env.DB, entityId)).toMatchObject({
-      prompt_version: "exploration-v2-contract",
+      prompt_version: "exploration-v3-chinese",
       query_version: "exploration-v2-bounded",
     });
   });
