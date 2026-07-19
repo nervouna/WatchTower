@@ -55,24 +55,26 @@ Widget _app(GoRouter router) {
 }
 
 void main() {
-  testWidgets('root shell uses three tabs and centered text-only titles', (
-    tester,
-  ) async {
-    final router = _router(initialLocation: '/');
-    await tester.pumpWidget(_app(router));
+  testWidgets(
+    'root shell uses three flat tabs and a left-aligned serif wordmark',
+    (tester) async {
+      final router = _router(initialLocation: '/');
+      await tester.pumpWidget(_app(router));
 
-    final appBar = tester.widget<AppBar>(find.byType(AppBar));
-    expect(appBar.centerTitle, isTrue);
-    expect(find.byType(Image), findsNothing);
-    expect(find.byType(NavigationDestination), findsNWidgets(3));
-    expect(find.byType(BackButton), findsNothing);
+      final appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.centerTitle, isNot(true));
+      expect(find.byType(Image), findsNothing);
+      expect(find.byType(NavigationDestination), findsNWidgets(3));
+      expect(find.text('WatchTower'), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
 
-    await tester.tap(find.text('设置'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('设置内容'), findsOneWidget);
-    expect(find.byType(BackButton), findsNothing);
-  });
+      expect(find.text('设置内容'), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+    },
+  );
 
   testWidgets('archive detail is a spoke screen that returns to the archive', (
     tester,

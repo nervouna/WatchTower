@@ -72,8 +72,9 @@ void main() {
       expect(find.text('相关产品'), findsOneWidget);
       expect(find.text('外部观点'), findsOneWidget);
       expect(find.text('行业位置'), findsOneWidget);
-      expect(find.text('接下来关注什么'), findsOneWidget);
       expect(find.textContaining('离线缓存'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('接下来关注什么'), 300);
+      expect(find.text('接下来关注什么'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('资料来源'), 400);
       expect(find.text('资料来源'), findsOneWidget);
       await tester.scrollUntilVisible(find.textContaining('AI 基于公开资料整理'), 400);

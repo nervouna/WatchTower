@@ -103,7 +103,7 @@ class _BackAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
   @override
   Widget build(BuildContext context) =>
-      AppBar(centerTitle: true, title: Text(title));
+      AppBar(centerTitle: false, title: Text(title));
 }
 
 class WatchTowerApp extends StatelessWidget {

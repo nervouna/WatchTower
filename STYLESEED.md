@@ -1,99 +1,59 @@
 # StyleSeed — Editorial Ledger Design Lock
 
-This file is the binding design contract for WatchTower web UI. It supersedes
-the former Radar Cyan, soft-radius, and card-surface direction. Mobile remains
-out of scope for this lock change.
+<!-- Locked contract for WatchTower Web and Flutter. Change only with explicit approval. -->
 
-## Product and surface
+## Product and surfaces
 
 - Product: WatchTower, a daily Chinese technology and product intelligence brief.
-- Surface: responsive, content-heavy editorial web application.
-- Primary tasks: read the latest brief, understand why each signal matters,
-  explore supporting evidence, and browse the archive.
-- Focal point: the brief headline. Every screen has one dominant focal point.
-- Public contract: briefs, archive, audio, transcripts, explorations, and privacy
-  remain anonymously readable even when authentication fails.
-
-## Direction
-
-- Name: Editorial Ledger.
-- Mood: precise, editorial, continuous, calm, and information-dense.
-- Composition: a publication masthead, a narrow issue/index rail, and one reading
-  column. Use type, rules, whitespace, and numbered entries instead of cards.
-- Reading measure: approximately 60–68 Chinese characters for long-form copy.
-- Spacing: an 8px baseline with 20px mobile and 32px desktop page gutters.
+- Surfaces: responsive editorial Web plus Flutter reading applications for iPhone, iPad, and Android.
+- Identity: precise, calm Editorial Ledger. The current brief headline is the single focal point.
+- Structure: continuous reading surfaces, restrained metadata, hairline rules, and one accent. No cards, decorative icon plates, gradients, shadows, or pill-shaped labels in editorial content.
 
 ## Color
 
-- Light page: `#FCFCFB`.
-- Light text: `#171717`; secondary text: `#62666B`; rule: `#D6D7D9`.
-- Light accent: editorial red `#B42318`.
-- Dark page: `#111315`.
-- Dark text: `#F4F4F1`; secondary text: `#A8ADB2`; rule: `#363A3E`.
-- Dark accent: `#FF8177`.
-- Accent is reserved for links, focus, the active navigation item, and selected
-  controls. Normal and complete states are neutral. Errors always include text.
-- Forbidden: gradients, glass, glow, decorative status colors, multiple accents,
-  and color-only meaning.
+| Token | Light | Dark |
+| --- | --- | --- |
+| Page | `#FCFCFB` | `#111315` |
+| Text | `#171717` | `#F4F4F1` |
+| Secondary | `#62666B` | `#A8ADB2` |
+| Divider | `#D6D7D9` | `#363A3E` |
+| Accent | `#B42318` | `#FF8177` |
 
-## Type
+- Accent is reserved for links, rank markers, focus, and primary actions.
+- Normal, complete, selected-cache, and success states remain neutral. Errors use accent plus explicit text, never color alone.
 
-- Editorial display: `"Iowan Old Style", Baskerville, "Songti SC", STSong,
-  "Noto Serif CJK SC", serif` for the wordmark, lead brief headline, brief-item
-  titles, section headings, and state-page headings.
-- Chinese lead headlines use the full reading-column width rather than a
-  `ch`-based measure, which produces an artificially square text block for CJK.
-- Body and controls: `system-ui, -apple-system, BlinkMacSystemFont,
-  "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
-  sans-serif`.
-- Fonts require zero downloads.
-- Desktop body text is at least 16px. The responsive brief headline ranges from
-  approximately 42px to 68px, uses relaxed display leading, and remains the sole
-  visual focal point.
+## Typography
 
-## Shape and elevation
+- Display serif, without bundled assets: iOS `Iowan Old Style`, `Baskerville`, then `Songti SC`, `STSong`; Android `Noto Serif`, `Noto Serif CJK SC`, then the platform Chinese fallback.
+- Body and controls: system sans serif. iOS uses SF/PingFang SC; Android uses Roboto/Noto Sans CJK.
+- Brief headline: 34–38pt phone, 42–48pt tablet, 1.16 line height, left aligned, full reading width.
+- Item title: 24–28pt serif at about 1.28 line height. Page and section headings: 22–28pt serif.
+- Body: at least 17pt with 1.6–1.7 line height. Metadata: 13–14pt. Only machine identifiers use monospace.
+- Honor Dynamic Type. Never disable scaling, fix text-bearing heights, or truncate prose with `maxLines`.
+- No font assets or font downloads. Real glyph fallback and mixed-script baselines are simulator acceptance evidence, not golden-test inputs.
 
-- Content surfaces: square, with no radius, fill, or shadow.
-- Controls: 4px radius and at least 44px high.
-- Account dialog: 8px radius and the only raised surface; a low-opacity shadow is
-  allowed in both color schemes.
-- Pills and badges are forbidden. Tags are plain slash-separated metadata.
+## Mobile application
 
-## Motion
+- Root navigation remains `今日`, `归档`, `设置`; history, privacy, and exploration are spoke screens with standard back navigation.
+- Root app bars are compact: serif `WatchTower` on Today and the page title elsewhere. No app icon or duplicate date.
+- Bottom navigation has no selected indicator pill. Use a top hairline, accent selected state, and neutral unselected state.
+- The mini player is a flat, hairline-separated row above navigation with play/pause, one-line title, and close.
+- Reading order: date/update, headline, intro, source coverage, audio toolbar, `01–NN` issue navigation, articles.
+- Width: 20px phone margins and a 680–760px wide reading column. Use an 8px spacing baseline.
+- Controls use 4px corners; confirmation dialogs may use 8px. Editorial surfaces remain square and transparent.
+- Minimum targets: 44pt on iOS and 48dp on Android. Preserve visible focus, VoiceOver/TalkBack order, keyboard activation, and link semantics.
 
-- Content appears immediately. No entrance, reveal, scroll, parallax, shimmer,
-  spinner, or hover-lift motion.
-- Direct interaction transitions use `100–140ms` for color and border only.
-- `prefers-reduced-motion` removes non-essential transitions.
+## States and motion
 
-## Content and component rules
-
-- Never use cards or nested cards as page structure.
-- Use semantic headings, paragraphs, lists, and horizontal rules for continuous
-  reading. Buttons are only for state changes or submissions; navigation and
-  disclosure-like reading actions retain link styling.
-- Do not repeat a heading with an eyebrow or generic explanatory subtitle.
-- Archive rows do not display `complete` or `partial` status labels; status remains
-  available in the data contract without interrupting date-and-count scanning.
-- Audio is a compact horizontal toolbar using native controls; podcast cover art
-  is not shown in the web reading flow.
-- Feedback, exploration, loading, empty, and failure states use local live regions
-  where needed. Never apply `aria-live` to the entire application root.
-
-## Responsive behavior
-
-- Maximum page width: approximately 1360px.
-- Above 960px: a 176px issue/index rail plus reading column.
-- At 960px and below: index links move below the brief header.
-- Below 640px: one column, preserved ranks, no horizontal overflow.
-- Verify at 1440×900, 1024×768, and 390×844 in light and dark modes.
+- Loading, empty, offline, error, and partial-result states retain the real shell and page title. Use serif headings, concise text, a clear next action, and static text skeletons.
+- No fullscreen spinner, shimmer, content entrance, scroll animation, parallax, animated gradient, or nested scroll surface.
+- Direct interaction keeps only short platform feedback. Root tabs continue to use `NoTransitionPage`.
+- Offline text, network refresh, authentication, audio, and push must degrade independently.
 
 ## Quality gate
 
-- Build material screens through `$ss-build`.
-- Run `$ss-score`, fix, and repeat until at least `80/100`.
-- Then run `$ss-verify` against real rendered happy, loading, empty, error,
-  archive, privacy, exploration, and account states.
-- Re-run the repository lint, typecheck, test, build, and diff checks.
+- Run `$ss-score` on real Flutter UI sources and fix/re-score to at least `80/100`.
+- Then run `$ss-verify` against actual 2× simulator screenshots in light, dark, default text, and an accessibility text size. Inspect every primary screen plus important loading, empty, error, offline, audio, and account states.
+- Do not use host-font-dependent goldens. The visual gate passes only after the rendered screenshots were actually viewed.
 
 Locked: 2026-07-19
