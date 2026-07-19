@@ -100,6 +100,22 @@ describe("narration validation", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("deterministically expands one slightly short repaired item without a third model call", async () => {
+    const repaired = validScript(7);
+    repaired.items[4]!.text_zh = "公开材料说明产品调整了现有流程，并强调当前功能仍围绕用户反馈继续改进。团队同时解释了变化的适用范围，方便读者核对这次更新。";
+    expect(Array.from(repaired.items[4]!.text_zh).length).toBeGreaterThanOrEqual(60);
+    expect(Array.from(repaired.items[4]!.text_zh).length).toBeLessThan(75);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: "{}" } }] }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify(repaired) } }] }));
+
+    const result = await generateNarration("secret", brief(7), { fetcher });
+
+    expect(validateNarration(result, brief(7)).ok).toBe(true);
+    expect(result.items[4]!.text_zh.match(/[。！？!?]/gu)?.length).toBe(repaired.items[4]!.text_zh.match(/[。！？!?]/gu)?.length);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     [5, "116-120", "75-140"],
     [6, "98-110", "75-130"],
@@ -113,5 +129,20 @@ describe("narration validation", () => {
     expect(initialBody.messages[0]?.content).toContain(`four complete sentences totaling ${expectedRange} code points for every item`);
     expect(repairBody.messages[3]?.content).toContain(`four complete sentences totaling ${expectedRange} code points`);
     expect(repairBody.messages[3]?.content).toContain(`validator hard limit of ${hardLimit} code points`);
+  });
+
+  it("supplies per-item token allowlists to the initial and repair prompts", async () => {
+    const source = brief(7);
+    source.items[0]!.summary = "ProjectX 2.0 improves the public workflow by 25%.";
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ choices: [{ message: { content: "{}" } }] }));
+
+    await expect(generateNarration("secret", source, { fetcher })).rejects.toThrow("NARRATION_VALIDATION_FAILED");
+
+    const initialBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as { messages: Array<{ content: string }> };
+    const repairBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)) as { messages: Array<{ content: string }> };
+    const input = JSON.parse(initialBody.messages[1]!.content) as { items: Array<{ allowed_numbers: string[]; allowed_latin_terms: string[] }> };
+    expect(input.items[0]?.allowed_numbers).toEqual(expect.arrayContaining(["2.0", "25%"]));
+    expect(input.items[0]?.allowed_latin_terms).toEqual(expect.arrayContaining(["ProjectX"]));
+    expect(repairBody.messages[3]?.content).toContain("per-item allowed_numbers and allowed_latin_terms arrays are exhaustive allowlists");
   });
 });

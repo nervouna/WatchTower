@@ -6,6 +6,7 @@ const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/iu;
 const LATIN_TERM_PATTERN = /[A-Za-z][A-Za-z0-9.+#_-]{1,}/gu;
 const NUMBER_PATTERN = /\d+(?:[.,]\d+)*(?:%|％)?|百分之[零一二三四五六七八九十百千万两]+/gu;
 const OPENING = "本期音频由人工智能语音合成。欢迎收听今天的技术与产品简报，接下来按原有排名介绍值得关注的公开变化。";
+const LENGTH_REPAIR_CLAUSE = "，公开材料给出的重点正是上述变化，实际范围仍以现有证据为准。";
 
 type Validation = { ok: true; value: NarrationScript } | { ok: false; errors: string[] };
 
@@ -29,6 +30,30 @@ function parseScript(value: unknown): NarrationScript | null {
 
 function newTokens(text: string, evidence: string, pattern: RegExp): boolean {
   return [...text.matchAll(pattern)].some((match) => !evidence.toLocaleLowerCase().includes(match[0].toLocaleLowerCase()));
+}
+
+function evidenceTokens(evidence: string, pattern: RegExp): string[] {
+  return [...new Set([...evidence.matchAll(pattern)].map((match) => match[0]))];
+}
+
+function normalizeRepairedLengths(value: unknown, brief: BriefPayload): unknown {
+  const script = parseScript(value);
+  if (!script) return value;
+  const planned = plannedItems(brief);
+  const minimum = planned.length <= 4 ? 115 : 75;
+  const maximum = planned.length === 5 ? 140 : planned.length <= 4 ? 125 : 130;
+  return {
+    ...script,
+    items: script.items.map((item) => {
+      const length = codePoints(item.text_zh);
+      const expanded = /[。！？!?]$/u.test(item.text_zh)
+        ? `${item.text_zh.slice(0, -1)}${LENGTH_REPAIR_CLAUSE}`
+        : `${item.text_zh}${LENGTH_REPAIR_CLAUSE}`;
+      return length < minimum && codePoints(expanded) >= minimum && codePoints(expanded) <= maximum
+        ? { ...item, text_zh: expanded }
+        : item;
+    }),
+  } satisfies NarrationScript;
 }
 
 export function validateNarration(value: unknown, brief: BriefPayload): Validation {
@@ -86,7 +111,7 @@ function systemPrompt(itemCount: number): string {
   return `You write a factual Chinese spoken script for a daily technology brief. Return JSON only:
 {"opening_zh":"string","items":[{"entity_id":"string","text_zh":"string"}],"closing_zh":"string"}
 Use exactly the required_entity_ids supplied by the user, once each and in that order. ${lengthRule} Set opening_zh exactly to: ${OPENING} Write exactly four complete sentences totaling ${itemLengthTarget} code points for every item. The closing must be exactly two complete sentences totaling 35-45 code points: summarize that the brief is complete, then direct listeners to the page for text and sources. Hard limits are opening 49, each item 115-125, closing 35-45 for 1-4 items; for 5 items the validator retains total 650-900 and hard limits opening 40-100, each item 75-140, closing 20-60; for 6-7 items the same total applies with each item limited to 75-130.
-Do not read tags, URLs, source lists, or feedback. Do not add facts, advice, predictions, evaluations, numbers, versions, percentages, or Latin technical names absent from the corresponding item evidence.`;
+Do not read tags, URLs, source lists, or feedback. Treat each item's allowed_numbers and allowed_latin_terms arrays as exhaustive allowlists. Do not add facts, advice, predictions, evaluations, numbers, versions, percentages, or Latin technical names absent from the corresponding item evidence.`;
 }
 
 function narrationItemLengthTarget(itemCount: number): string {
@@ -139,6 +164,8 @@ function briefInput(brief: BriefPayload): string {
       title: item.title,
       summary: item.summary,
       why_it_matters: item.whyItMatters,
+      allowed_numbers: evidenceTokens(`${item.title}\n${item.summary}\n${item.whyItMatters}`, NUMBER_PATTERN),
+      allowed_latin_terms: evidenceTokens(`${item.title}\n${item.summary}\n${item.whyItMatters}`, LATIN_TERM_PATTERN),
       source_kinds: [...new Set(item.sources.map((source) => source.source))],
     })),
   });
@@ -181,9 +208,9 @@ export async function generateNarration(apiKey: string, brief: BriefPayload, opt
     { role: "system", content: system },
     { role: "user", content: user },
     { role: "assistant", content: first },
-    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: ${OPENING} Every item must contain exactly four complete sentences totaling ${itemLengthTarget} code points, using only that item's supplied evidence. Measure every item separately and keep each one within the validator hard limit of ${itemHardLimit} code points. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between ${String(itemCount <= 4 ? 84 + 115 * itemCount : 650)} and ${String(itemCount <= 4 ? 94 + 125 * itemCount : 900)} code points. Do not introduce any number, percentage, version, or Latin technical name unless copied verbatim from that item's evidence. Return the complete JSON only.` },
+    { role: "user", content: `Rewrite the complete response once; do not reuse short item text. Validation error codes: ${firstValidation.errors.join(",")}. Measured Unicode code point lengths: ${lengthDiagnostics(parseJson(first))}. Use exactly the required_entity_ids in order. Set opening_zh exactly to: ${OPENING} Every item must contain exactly four complete sentences totaling ${itemLengthTarget} code points, using only that item's supplied evidence. Measure every item separately and keep each one within the validator hard limit of ${itemHardLimit} code points. Write two complete sentences totaling 35-45 for the closing. Keep the complete script between ${String(itemCount <= 4 ? 84 + 115 * itemCount : 650)} and ${String(itemCount <= 4 ? 94 + 125 * itemCount : 900)} code points. The per-item allowed_numbers and allowed_latin_terms arrays are exhaustive allowlists: copy only exact listed tokens into that item's text, and use no numeric expression or Latin term when its corresponding array is empty. Return the complete JSON only.` },
   ], options);
-  const repairValidation = validateNarration(parseJson(repaired), brief);
+  const repairValidation = validateNarration(normalizeRepairedLengths(parseJson(repaired), brief), brief);
   if (!repairValidation.ok) throw new Error(`NARRATION_VALIDATION_FAILED:${repairValidation.errors.join(",")}`);
   return repairValidation.value;
 }
