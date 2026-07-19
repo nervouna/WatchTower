@@ -33,6 +33,7 @@ import {
   sha256,
   testflightBuildReceiptPath,
   uuidOutputSha256,
+  validIsoTimestamp,
 } from "../scripts/release-lib.mjs";
 import {
   isAllowedListenHost,
@@ -310,6 +311,12 @@ describe("secret-file and local proxy safety", () => {
 });
 
 describe("release smoke contracts", () => {
+  it("accepts Cloudflare metadata timestamps with microsecond precision", () => {
+    expect(validIsoTimestamp("2026-07-19T16:13:09.252717Z")).toBe(true);
+    expect(validIsoTimestamp("2026-07-19T16:13:09.252717+00:00")).toBe(false);
+    expect(validIsoTimestamp("2026-02-30T16:13:09.252717Z")).toBe(false);
+  });
+
   it("rejects HTML and invalid JSON instead of accepting an empty payload", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new globalThis.Response("<html>Access</html>", {
       status: 200,

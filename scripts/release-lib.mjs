@@ -104,9 +104,9 @@ export function validUtcDate(value) {
 }
 
 export function validIsoTimestamp(value) {
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u.test(value)) return false;
   const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19);
 }
 
 export function repositoryState() {
