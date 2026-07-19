@@ -266,30 +266,33 @@ function renderBriefAudio(audio, brief) {
   );
   heading.append(element("h2", "audio-title", title), aiLabel);
   content.append(heading);
+  const appendRetry = () => {
+    if (!capabilities.audioRetry) return;
+    const retry = element("button", "dialog-button dialog-button-secondary", "重新生成语音");
+    retry.type = "button";
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "正在提交…";
+      try {
+        const result = await feedbackApi(`/api/briefs/${brief.date}/audio/retry`, { method: "POST" });
+        retry.textContent = result.status === "queued" ? "语音正在重新生成" : "语音仍在生成中";
+      } catch {
+        retry.disabled = false;
+        retry.textContent = "提交失败，请重试";
+      }
+    });
+    content.append(retry);
+  };
   if (audio.status === "pending") {
     content.append(element("p", "audio-state-copy", "语音版正在生成，稍后刷新。文字简报可以正常阅读。"));
+    appendRetry();
     layout.append(content);
     section.append(layout);
     return section;
   }
   if (audio.status === "failed") {
     content.append(element("p", "audio-state-copy", "语音版暂时不可用，文字简报不受影响。"));
-    if (capabilities.audioRetry) {
-      const retry = element("button", "dialog-button dialog-button-secondary", "重新生成语音");
-      retry.type = "button";
-      retry.addEventListener("click", async () => {
-        retry.disabled = true;
-        retry.textContent = "正在提交…";
-        try {
-          await feedbackApi(`/api/briefs/${brief.date}/audio/retry`, { method: "POST" });
-          retry.textContent = "语音正在重新生成";
-        } catch {
-          retry.disabled = false;
-          retry.textContent = "提交失败，请重试";
-        }
-      });
-      content.append(retry);
-    }
+    appendRetry();
     layout.append(content);
     section.append(layout);
     return section;
